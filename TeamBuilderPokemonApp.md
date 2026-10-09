@@ -47,9 +47,18 @@ Añadir una opción para importar Pokémon mediante el formato de pegado **Impor
 - Mostrar errores si el formato no es válido.
 - Permitir elegir en cuál de los dos equipos se importa.
 
-**Referencia visual:**
+**Referencia formate de importanción:**
 
-![Importación y exportación de Pokémon Showdown](TeamBuilderPokemonApp_assets/import-export-showdown.png)
+```text
+Torkoal @ Charcoal
+Ability: Drought
+EVs: 32 HP / 1 Def / 32 SpA / 1 SpD
+Quiet Nature
+- Protect
+- Heat Wave
+- Eruption
+- Weather Ball
+```
 
 ### 2.2. Borrar Pokémon
 
@@ -59,7 +68,12 @@ Cuando seleccionamos mediante un *check* únicamente un Pokémon, podremos elegi
 
 Deberemos seleccionar **dos Pokémon de equipos diferentes** (uno de cada columna). Entonces podremos elegir la opción de enfrentarlos, que abrirá una ventana nueva con la **Calculadora de Daño Pokémon**.
 
-La calculadora de daño debe ser parecida a [Pokémon Showdown Damage Calculator](https://calc.pokemonshowdown.com/) y tener también el aspecto de la imagen de referencia `PKMN_DMG_CALCULATOR.JPG`.
+La calculadora de daño debe ser parecida a [Pokémon Showdown Damage Calculator](https://calc.pokemonshowdown.com/) y tener también el aspecto de la imagen de referencia.
+
+**Referencia visual:**
+
+![Modelo de calculadora de daño](TeamBuilderPokemonApp_assets/pkmn-dmg-calculator.png)
+
 
 #### Factores que afectan al daño
 
