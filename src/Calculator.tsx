@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowRightLeft, Swords, Wind, Sun, Leaf } from 'lucide-react';
-import { Modal, Sprite, Types, errorText } from './components';
+import { Modal, Sprite, Types, NatureIndicator, errorText } from './components';
 import { attackOrder, damageFor, type BattleSettings, type SideSettings } from './battle';
 import {
   calcPokemon,
@@ -9,6 +9,9 @@ import {
   spread,
   stats,
   statLabels,
+  apiGeneration,
+  mechanicsLabel,
+  natureLabel,
   type Gen,
   type Member,
 } from './model';
@@ -30,6 +33,7 @@ export default function Calculator({
   gen: Gen;
   onClose: () => void;
 }) {
+  const era = apiGeneration(gen);
   const side = (m: Member): SideSettings => ({
     reflect: false,
     lightScreen: false,
@@ -43,7 +47,7 @@ export default function Calculator({
   const [settings, setSettings] = useState<BattleSettings>({
       weather: '',
       terrain: '',
-      doubles: gen >= 3,
+      doubles: era >= 3,
       trickRoom: false,
       sides: [side(members[0]), side(members[1])],
     }),
@@ -86,7 +90,7 @@ export default function Calculator({
     ['Sun', 'Sol'],
     ['Rain', 'Lluvia'],
     ['Sand', 'Tormenta de arena'],
-    ...(gen >= 3 ? [[gen >= 9 ? 'Snow' : 'Hail', gen >= 9 ? 'Nevada' : 'Granizo']] : []),
+    ...(era >= 3 ? [[era >= 9 ? 'Snow' : 'Hail', era >= 9 ? 'Nevada' : 'Granizo']] : []),
   ];
   function fighter(i: number) {
     const m = members[i],
@@ -107,7 +111,7 @@ export default function Calculator({
         <dl className="battle-meta">
           <div>
             <dt>Habilidad</dt>
-            <dd>{gen >= 3 ? m.ability : '—'}</dd>
+            <dd>{era >= 3 ? m.ability : '—'}</dd>
           </div>
           <div>
             <dt>Objeto</dt>
@@ -115,7 +119,7 @@ export default function Calculator({
           </div>
           <div>
             <dt>Naturaleza</dt>
-            <dd>{gen >= 3 ? m.nature : '—'}</dd>
+            <dd>{era >= 3 ? natureLabel(m.nature) : '—'}</dd>
           </div>
           <div>
             <dt>PS actuales</dt>
@@ -137,7 +141,7 @@ export default function Calculator({
             ))}
           </select>
         </label>
-        {gen >= 3 && (
+        {era >= 3 && (
           <label
             className="check-line ability-toggle"
             title="Activa el efecto condicionado de habilidades como Intimidate, Flash Fire, Unburden o Slow Start."
@@ -157,7 +161,8 @@ export default function Calculator({
             .map((t) => (
               <label key={t}>
                 <span>
-                  {statLabels[t]} <strong>{p.rawStats[t]}</strong>
+                  {statLabels[t]} <NatureIndicator nature={m.nature} stat={t} gen={gen} />
+                  <strong>{p.rawStats[t]}</strong>
                 </span>
                 <select
                   aria-label={`${statLabels[t]} ${m.data.name}`}
@@ -233,7 +238,7 @@ export default function Calculator({
   return (
     <Modal
       title="Calculadora de daño"
-      subtitle={`Generación ${gen} · Motor de cálculo Smogon`}
+      subtitle={`${mechanicsLabel(gen)} · Motor de cálculo Smogon`}
       onClose={onClose}
       wide
     >
@@ -252,7 +257,7 @@ export default function Calculator({
             </button>
             <button
               className={settings.doubles ? 'active' : ''}
-              disabled={gen < 3}
+              disabled={era < 3}
               onClick={() => setSettings((s) => ({ ...s, doubles: true }))}
             >
               Dobles
@@ -262,7 +267,7 @@ export default function Calculator({
             <Sun size={15} />
             Clima
             <select
-              disabled={gen < 2}
+              disabled={era < 2}
               value={settings.weather}
               onChange={(e) =>
                 setSettings((s) => ({ ...s, weather: e.target.value as BattleSettings['weather'] }))
@@ -279,7 +284,7 @@ export default function Calculator({
             <Leaf size={15} />
             Terreno
             <select
-              disabled={gen < 6}
+              disabled={era < 6}
               value={settings.terrain}
               onChange={(e) =>
                 setSettings((s) => ({ ...s, terrain: e.target.value as BattleSettings['terrain'] }))
@@ -289,14 +294,14 @@ export default function Calculator({
               <option value="Electric">Eléctrico</option>
               <option value="Grassy">Herbáceo</option>
               <option value="Misty">Brumoso</option>
-              <option value="Psychic" disabled={gen < 7}>
+              <option value="Psychic" disabled={era < 7}>
                 Psíquico
               </option>
             </select>
           </label>
           <label className="check-line room">
             <input
-              disabled={gen < 4}
+              disabled={era < 4}
               type="checkbox"
               checked={settings.trickRoom}
               onChange={(e) => setSettings((s) => ({ ...s, trickRoom: e.target.checked }))}
@@ -326,7 +331,7 @@ export default function Calculator({
               <label className="check-line">
                 <input
                   type="checkbox"
-                  disabled={gen < 4}
+                  disabled={era < 4}
                   checked={s.tailwind}
                   onChange={(e) => updateSide(i, { tailwind: e.target.checked })}
                 />

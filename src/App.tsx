@@ -15,12 +15,19 @@ import {
   ArrowUpRight,
   BookOpen,
   CircleHelp,
+  FolderHeart,
+  Moon,
+  Sun,
+  Save,
 } from 'lucide-react';
 import {
   calcPokemon,
   emptyTeams,
   restoreTeams,
   validateMember,
+  apiGeneration,
+  mechanicsLabel,
+  convertMemberProfile,
   type Gen,
   type Member,
   type Team,
@@ -29,6 +36,14 @@ import { loadPokemon } from './api';
 import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
+import Library from './ConfigurationLibrary';
+import {
+  LIBRARY_KEY,
+  restoreLibrary,
+  addConfiguration,
+  persistLibrary,
+  type SavedConfiguration,
+} from './library';
 const STORAGE = 'pokemon-team-lab:v1';
 type Slot = { team: number; slot: number };
 const demo = [
@@ -43,8 +58,26 @@ function initialState() {
     return { saved: null, invalid: false };
   }
 }
+function initialLibrary() {
+  try {
+    return restoreLibrary(localStorage.getItem(LIBRARY_KEY));
+  } catch {
+    return { entries: [], invalid: false };
+  }
+}
+function initialTheme(): 'light' | 'dark' {
+  try {
+    const value = localStorage.getItem('pokemon-team-lab:theme');
+    if (value === 'light' || value === 'dark') return value;
+  } catch {}
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 export default function App() {
   const [initial] = useState(initialState),
+    [libraryInitial] = useState(initialLibrary),
+    [configurations, setConfigurations] = useState(libraryInitial.entries),
+    [view, setView] = useState<'teams' | 'library'>('teams'),
+    [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
     [gen, setGen] = useState<Gen>(initial.saved?.gen || 9),
     [selected, setSelected] = useState<Slot[]>([]),
@@ -60,7 +93,14 @@ export default function App() {
     ),
     [storageError, setStorageError] = useState(''),
     [dirty, setDirty] = useState(false),
-    [deleteSlot, setDeleteSlot] = useState<Slot | null>(null);
+    [deleteSlots, setDeleteSlots] = useState<Slot[] | null>(null);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem('pokemon-team-lab:theme', theme);
+    } catch {}
+  }, [theme]);
+  const occupiedSelection = selected.filter((slot) => teams[slot.team].slots[slot.slot]);
   useEffect(() => {
     if (!dirty) return;
     try {
@@ -90,12 +130,88 @@ export default function App() {
     setEditor(null);
     setMessage(`${m.data.name} guardado en ${teams[editor.team].name}.`);
   }
+  function saveConfiguration(member: Member, name: string) {
+    const result = addConfiguration(configurations, member, gen, name);
+    try {
+      persistLibrary(result.entries);
+    } catch {
+      throw new Error('No se pudo guardar la configuración en este navegador.');
+    }
+    setConfigurations(result.entries);
+    setMessage(`${result.entry.name} guardada en tu biblioteca.`);
+  }
+  async function addFromLibrary(entry: SavedConfiguration, team: number) {
+    const free = teams[team].slots.findIndex((slot) => !slot);
+    if (free < 0) {
+      setMessage('El equipo está completo. Libera una plaza primero.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const member = convertMemberProfile(entry.member, entry.gen, gen);
+      member.data = await loadPokemon(member.data.name, gen);
+      validateMember(member, gen);
+      const next = structuredClone(teams);
+      next[team].slots[free] = member;
+      changeTeams(next);
+      setMessage(`${entry.name} añadida a ${teams[team].name}, plaza ${free + 1}.`);
+    } catch (e) {
+      setMessage(`No se ha añadido la configuración: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importConfigurations(text: string, name: string) {
+    setBusy(true);
+    try {
+      const members = await importShowdown(text, gen);
+      let entries = configurations;
+      for (const member of members)
+        entries = addConfiguration(
+          entries,
+          member,
+          gen,
+          members.length === 1 ? name : `${name} · ${member.data.name}`,
+        ).entries;
+      try {
+        persistLibrary(entries);
+      } catch {
+        throw new Error('No se pudo guardar la biblioteca en este navegador.');
+      }
+      setConfigurations(entries);
+      setMessage(`${members.length} configuraciones importadas en la biblioteca.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function renameConfiguration(entry: SavedConfiguration, name: string) {
+    const next = configurations.map((value) =>
+      value.id === entry.id ? { ...value, name } : value,
+    );
+    try {
+      persistLibrary(next);
+    } catch {
+      throw new Error('No se pudo guardar el nombre.');
+    }
+    setConfigurations(next);
+  }
   function toggle(team: number, slot: number) {
     setSelected((s) =>
       s.some((p) => p.team === team && p.slot === slot)
         ? s.filter((p) => p.team !== team || p.slot !== slot)
         : [...s, { team, slot }],
     );
+  }
+  function deleteConfiguration(entry: SavedConfiguration) {
+    const next = configurations.filter((value) => value.id !== entry.id);
+    try {
+      persistLibrary(next);
+    } catch {
+      throw new Error('No se pudo eliminar la configuración de este navegador.');
+    }
+    setConfigurations(next);
+    setMessage(`${entry.name} eliminada de tu biblioteca.`);
   }
   function importMembers(team: number, members: Member[], replace: boolean) {
     const next = structuredClone(teams);
@@ -115,15 +231,19 @@ export default function App() {
     try {
       const next = structuredClone(teams);
       for (const team of next)
-        for (const m of team.slots)
-          if (m) {
+        for (let i = 0; i < team.slots.length; i++)
+          if (team.slots[i]) {
+            const m = convertMemberProfile(team.slots[i]!, gen, value);
             m.data = await loadPokemon(m.data.name, value);
             validateMember(m, value);
+            team.slots[i] = m;
           }
       setGen(value);
       changeTeams(next);
       setSelected([]);
-      setMessage(`Mecánicas de la generación ${value} activadas.`);
+      setMessage(
+        `${mechanicsLabel(value)} activado.${value === 0 ? ' EVs convertidos a SP; nivel 50 e IVs perfectos.' : ''}`,
+      );
     } catch (e) {
       setMessage(
         `No se ha cambiado la generación: ${errorText(e)} Adapta o elimina los Pokémon incompatibles primero.`,
@@ -173,11 +293,25 @@ export default function App() {
         <p className="sidebar-caption">POKÉMON WORKSPACE</p>
         <nav aria-label="Navegación principal">
           <button
-            className="nav-item active"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className={`nav-item ${view === 'teams' ? 'active' : ''}`}
+            onClick={() => {
+              setView('teams');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           >
             <LayoutGrid size={19} />
             Constructor de equipos
+            <span className="nav-dot" />
+          </button>
+          <button
+            className={`nav-item ${view === 'library' ? 'active' : ''}`}
+            onClick={() => {
+              setView('library');
+              setSelected([]);
+            }}
+          >
+            <FolderHeart size={19} />
+            Mis configuraciones
             <span className="nav-dot" />
           </button>
           <button
@@ -219,7 +353,8 @@ export default function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <span>/</span> <strong>Constructor de equipos</strong>
+            Workspace <span>/</span>{' '}
+            <strong>{view === 'teams' ? 'Constructor de equipos' : 'Mis configuraciones'}</strong>
           </div>
           <div className="save-status">
             <span className={storageError ? 'status-dot warning' : 'status-dot'} />
@@ -229,295 +364,348 @@ export default function App() {
                 ? 'Guardado en este navegador'
                 : 'Almacenamiento local'}
             <ShieldCheck size={17} />
+            <button
+              className="theme-toggle icon-button"
+              aria-label={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+              onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+            >
+              {theme === 'light' ? <Moon size={19} /> : <Sun size={19} />}
+            </button>
           </div>
         </header>
         <main>
-          <section className="page-intro">
-            <div>
-              <p className="eyebrow">
-                <span /> CONSTRUYE. COMPARA. COMPITE.
-              </p>
-              <h1>
-                Tu estrategia empieza
-                <br />
-                con un <em>buen equipo.</em>
-              </h1>
-              <p className="intro-description">
-                Prepara tus Pokémon, afina sus características y encuentra
-                <br className="desktop-break" /> la ventaja en cada enfrentamiento.
-              </p>
-            </div>
-            <div className="intro-counter">
-              <div className="counter-orbit">
-                <span className="orbit-dot" />
-                <Swords size={33} strokeWidth={1.5} />
-              </div>
-              <p>
-                <strong>{String(count).padStart(2, '0')}</strong>
-                <span>
-                  / 12
-                  <br />
-                  POKÉMON
-                </span>
-              </p>
-            </div>
-          </section>
-          <div className="workspace-toolbar">
-            <div className="workspace-tabs">
-              <span className="workspace-tab">
-                <LayoutGrid size={16} />
-                Mis equipos<span className="pill">2</span>
-              </span>
-            </div>
-            <div className="toolbar-controls">
-              <label className="generation-label">
-                Mecánicas
-                <select
-                  aria-label="Generación"
-                  disabled={busy}
-                  value={gen}
-                  onChange={(e) => void changeGeneration(Number(e.target.value) as Gen)}
-                >
-                  {Array.from({ length: 9 }, (_, i) => (
-                    <option key={i} value={i + 1}>
-                      Generación {i + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="button secondary compact"
-                disabled={busy}
-                onClick={() => setTransfer({ mode: 'import', team: 0 })}
-              >
-                <ArrowDownToLine size={16} />
-                Importar
-              </button>
-              <button
-                className="button secondary compact"
-                disabled={busy || !count}
-                onClick={() => setTransfer({ mode: 'export', team: 0 })}
-              >
-                <ArrowUpFromLine size={16} />
-                Exportar
-              </button>
-            </div>
-          </div>
-          {(message || storageError) && (
-            <div className={`notice ${storageError ? 'error' : ''}`} role="status">
-              <span>{storageError || message}</span>
-              <button
-                className="icon-button"
-                aria-label="Cerrar aviso"
-                onClick={() => {
-                  setMessage('');
-                  setStorageError('');
-                }}
-              >
-                ×
-              </button>
-            </div>
-          )}
-          <div className="teams-grid">
-            {teams.map((team, t) => (
-              <section className={`team-panel team-${t}`} key={t}>
-                <header className="team-header">
-                  <div className="team-avatar">{t === 0 ? 'A' : 'E'}</div>
-                  <div>
-                    <p className="eyebrow">EQUIPO {String(t + 1).padStart(2, '0')}</p>
-                    <input
-                      className="team-name"
-                      aria-label={`Nombre equipo ${t + 1}`}
-                      value={team.name}
-                      maxLength={40}
-                      disabled={busy}
-                      onChange={(e) => {
-                        const next = structuredClone(teams);
-                        next[t].name = e.target.value;
-                        changeTeams(next);
-                      }}
-                    />
+          {view === 'library' ? (
+            <>
+              {(message || storageError) && (
+                <div className="notice" role="status">
+                  {storageError || message}
+                </div>
+              )}
+              <Library
+                entries={configurations}
+                teams={teams}
+                gen={gen}
+                busy={busy}
+                invalid={libraryInitial.invalid && configurations.length === 0}
+                onAdd={addFromLibrary}
+                onImport={importConfigurations}
+                onRename={renameConfiguration}
+                onDelete={deleteConfiguration}
+                onChangeMechanics={changeGeneration}
+              />
+            </>
+          ) : (
+            <>
+              <section className="page-intro">
+                <div>
+                  <p className="eyebrow">
+                    <span /> CONSTRUYE. COMPARA. COMPITE.
+                  </p>
+                  <h1>
+                    Tu estrategia empieza
+                    <br />
+                    con un <em>buen equipo.</em>
+                  </h1>
+                  <p className="intro-description">
+                    Prepara tus Pokémon, afina sus características y encuentra
+                    <br className="desktop-break" /> la ventaja en cada enfrentamiento.
+                  </p>
+                </div>
+                <div className="intro-counter">
+                  <div className="counter-orbit">
+                    <span className="orbit-dot" />
+                    <Swords size={33} strokeWidth={1.5} />
                   </div>
-                  <span className="team-count">
-                    {team.slots.filter(Boolean).length}
-                    <span> / 6</span>
+                  <p>
+                    <strong>{String(count).padStart(2, '0')}</strong>
+                    <span>
+                      / 12
+                      <br />
+                      POKÉMON
+                    </span>
+                  </p>
+                </div>
+              </section>
+              <div className="workspace-toolbar">
+                <div className="workspace-tabs">
+                  <span className="workspace-tab">
+                    <LayoutGrid size={16} />
+                    Mis equipos<span className="pill">2</span>
                   </span>
+                </div>
+                <div className="toolbar-controls">
+                  <label className="generation-label">
+                    Mecánicas
+                    <select
+                      aria-label="Generación"
+                      disabled={busy}
+                      value={gen}
+                      onChange={(e) => void changeGeneration(Number(e.target.value) as Gen)}
+                    >
+                      <option value={0}>Pokémon Champions</option>
+                      {Array.from({ length: 9 }, (_, i) => (
+                        <option key={i} value={i + 1}>
+                          Generación {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="button secondary compact"
+                    disabled={busy}
+                    onClick={() => setTransfer({ mode: 'import', team: 0 })}
+                  >
+                    <ArrowDownToLine size={16} />
+                    Importar
+                  </button>
+                  <button
+                    className="button secondary compact"
+                    disabled={busy || !count}
+                    onClick={() => setTransfer({ mode: 'export', team: 0 })}
+                  >
+                    <ArrowUpFromLine size={16} />
+                    Exportar
+                  </button>
+                </div>
+              </div>
+              {(message || storageError) && (
+                <div className={`notice ${storageError ? 'error' : ''}`} role="status">
+                  <span>{storageError || message}</span>
                   <button
                     className="icon-button"
-                    disabled={busy}
-                    title="Importar en este equipo"
-                    aria-label={`Importar en equipo ${t + 1}`}
-                    onClick={() => setTransfer({ mode: 'import', team: t })}
+                    aria-label="Cerrar aviso"
+                    onClick={() => {
+                      setMessage('');
+                      setStorageError('');
+                    }}
                   >
-                    <ArrowDownToLine size={18} />
+                    ×
                   </button>
-                </header>
-                <div className="team-slots">
-                  {team.slots.map((m, i) => {
-                    const chosen = selected.some((s) => s.team === t && s.slot === i);
-                    return (
-                      <article
-                        key={i}
-                        className={`pokemon-card ${m ? 'filled' : 'empty'} ${chosen ? 'selected' : ''}`}
+                </div>
+              )}
+              <div className="teams-grid">
+                {teams.map((team, t) => (
+                  <section className={`team-panel team-${t}`} key={t}>
+                    <header className="team-header">
+                      <div className="team-avatar">{t === 0 ? 'A' : 'E'}</div>
+                      <div>
+                        <p className="eyebrow">EQUIPO {String(t + 1).padStart(2, '0')}</p>
+                        <input
+                          className="team-name"
+                          aria-label={`Nombre equipo ${t + 1}`}
+                          value={team.name}
+                          maxLength={40}
+                          disabled={busy}
+                          onChange={(e) => {
+                            const next = structuredClone(teams);
+                            next[t].name = e.target.value;
+                            changeTeams(next);
+                          }}
+                        />
+                      </div>
+                      <span className="team-count">
+                        {team.slots.filter(Boolean).length}
+                        <span> / 6</span>
+                      </span>
+                      <button
+                        className="icon-button"
+                        disabled={busy}
+                        title="Importar en este equipo"
+                        aria-label={`Importar en equipo ${t + 1}`}
+                        onClick={() => setTransfer({ mode: 'import', team: t })}
                       >
-                        <label className="slot-check">
-                          <input
-                            type="checkbox"
-                            disabled={busy}
-                            checked={chosen}
-                            onChange={() => toggle(t, i)}
-                            aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
-                          />
-                          <span>{chosen ? <Check size={12} /> : null}</span>
-                        </label>
-                        <span className="slot-number">{String(i + 1).padStart(2, '0')}</span>
-                        {m ? (
-                          <>
-                            <Sprite member={m} />
-                            <div className="pokemon-info">
-                              <div className="pokemon-title">
+                        <ArrowDownToLine size={18} />
+                      </button>
+                    </header>
+                    <div className="team-slots">
+                      {team.slots.map((m, i) => {
+                        const chosen = selected.some((s) => s.team === t && s.slot === i);
+                        return (
+                          <article
+                            key={i}
+                            className={`pokemon-card ${m ? 'filled' : 'empty'} ${chosen ? 'selected' : ''}`}
+                          >
+                            <label className="slot-check">
+                              <input
+                                type="checkbox"
+                                disabled={busy}
+                                checked={chosen}
+                                onChange={() => toggle(t, i)}
+                                aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
+                              />
+                              <span>{chosen ? <Check size={12} /> : null}</span>
+                            </label>
+                            <span className="slot-number">{String(i + 1).padStart(2, '0')}</span>
+                            {m ? (
+                              <>
+                                <Sprite member={m} />
+                                <div className="pokemon-info">
+                                  <div className="pokemon-title">
+                                    <button
+                                      className="name-button"
+                                      disabled={busy}
+                                      onClick={() => setEditor({ team: t, slot: i })}
+                                    >
+                                      {m.nickname || m.data.name}
+                                    </button>
+                                    <span className="pokemon-level">
+                                      Nv. {m.level}{' '}
+                                      <span>
+                                        {m.gender === 'M' ? '♂' : m.gender === 'F' ? '♀' : '—'}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <Types
+                                    types={calcPokemon(m, gen).types.map((type) =>
+                                      type.toLowerCase(),
+                                    )}
+                                  />
+                                  <div className="pokemon-meta">
+                                    <span title="Habilidad">
+                                      {apiGeneration(gen) >= 3 ? m.ability : 'Sin habilidad'}
+                                    </span>
+                                    <i />{' '}
+                                    <span title="Objeto equipado">{m.item || 'Sin objeto'}</span>
+                                  </div>
+                                  <div className="card-moves">
+                                    {m.moves.map((move, n) => (
+                                      <span className={!move ? 'unused' : ''} key={n}>
+                                        {move || '—'}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
                                 <button
-                                  className="name-button"
+                                  className="card-edit icon-button"
                                   disabled={busy}
+                                  aria-label={`Editar ${m.data.name}`}
                                   onClick={() => setEditor({ team: t, slot: i })}
                                 >
-                                  {m.nickname || m.data.name}
+                                  <Pencil size={15} />
                                 </button>
-                                <span className="pokemon-level">
-                                  Nv. {m.level}{' '}
-                                  <span>
-                                    {m.gender === 'M' ? '♂' : m.gender === 'F' ? '♀' : '—'}
-                                  </span>
+                              </>
+                            ) : (
+                              <button
+                                className="empty-content"
+                                disabled={busy}
+                                onClick={() => setEditor({ team: t, slot: i })}
+                              >
+                                <span className="empty-plus">
+                                  <Plus size={20} />
                                 </span>
-                              </div>
-                              <Types
-                                types={calcPokemon(m, gen).types.map((type) => type.toLowerCase())}
-                              />
-                              <div className="pokemon-meta">
-                                <span title="Habilidad">
-                                  {gen >= 3 ? m.ability : 'Sin habilidad'}
+                                <span>
+                                  <strong>Añadir Pokémon</strong>
+                                  <small>Una plaza para tu próxima estrategia</small>
                                 </span>
-                                <i /> <span title="Objeto equipado">{m.item || 'Sin objeto'}</span>
-                              </div>
-                              <div className="card-moves">
-                                {m.moves.map((move, n) => (
-                                  <span className={!move ? 'unused' : ''} key={n}>
-                                    {move || '—'}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <button
-                              className="card-edit icon-button"
-                              disabled={busy}
-                              aria-label={`Editar ${m.data.name}`}
-                              onClick={() => setEditor({ team: t, slot: i })}
-                            >
-                              <Pencil size={15} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className="empty-content"
-                            disabled={busy}
-                            onClick={() => setEditor({ team: t, slot: i })}
-                          >
-                            <span className="empty-plus">
-                              <Plus size={20} />
-                            </span>
-                            <span>
-                              <strong>Añadir Pokémon</strong>
-                              <small>Una plaza para tu próxima estrategia</small>
-                            </span>
-                            <ArrowUpRight size={17} />
-                          </button>
-                        )}
-                      </article>
-                    );
-                  })}
-                </div>
-                <footer className="team-footer">
-                  <span>
-                    <span className="local-dot" />
-                    Guardado local
-                  </span>
-                  <button
-                    disabled={!team.slots.some(Boolean) || busy}
-                    onClick={() => setTransfer({ mode: 'export', team: t })}
-                  >
-                    Exportar equipo <ArrowUpRight size={14} />
+                                <ArrowUpRight size={17} />
+                              </button>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                    <footer className="team-footer">
+                      <span>
+                        <span className="local-dot" />
+                        Guardado local
+                      </span>
+                      <button
+                        disabled={!team.slots.some(Boolean) || busy}
+                        onClick={() => setTransfer({ mode: 'export', team: t })}
+                      >
+                        Exportar equipo <ArrowUpRight size={14} />
+                      </button>
+                    </footer>
+                  </section>
+                ))}
+              </div>
+              <div className="workspace-hint">
+                <CircleHelp size={16} />
+                <span>
+                  Selecciona un Pokémon de cada equipo para calcular el daño y comparar quién
+                  atacaría primero.
+                </span>
+                {!count && (
+                  <button disabled={busy} onClick={() => void loadDemo()}>
+                    {busy ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
+                    Cargar ejemplo
                   </button>
-                </footer>
-              </section>
-            ))}
-          </div>
-          <div className="workspace-hint">
-            <CircleHelp size={16} />
-            <span>
-              Selecciona un Pokémon de cada equipo para calcular el daño y comparar quién atacaría
-              primero.
-            </span>
-            {!count && (
-              <button disabled={busy} onClick={() => void loadDemo()}>
-                {busy ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}Cargar
-                ejemplo
-              </button>
-            )}
-          </div>
-          <div className="action-bar">
-            <div className="selection-status">
-              <span className="selection-icon">
-                <Check size={16} />
-              </span>
-              <strong>
-                {selected.length}{' '}
-                {selected.length === 1 ? 'plaza seleccionada' : 'plazas seleccionadas'}
-              </strong>
-              {selected.length > 0 && <button onClick={() => setSelected([])}>Limpiar</button>}
-            </div>
-            <div className="selection-actions">
-              <button
-                className="button secondary"
-                disabled={!single || busy}
-                onClick={() => single && setEditor(single)}
-              >
-                <Pencil size={16} />
-                {single && teams[single.team].slots[single.slot] ? 'Editar' : 'Añadir / editar'}
-              </button>
-              <button
-                className="button danger"
-                disabled={!single || !teams[single.team].slots[single.slot] || busy}
-                onClick={() => single && setDeleteSlot(single)}
-              >
-                <Trash2 size={16} />
-                <span>Borrar</span>
-              </button>
-              <button
-                className="button primary"
-                disabled={!canBattle || busy}
-                onClick={startBattle}
-              >
-                <Swords size={17} />
-                Enfrentar Pokémon
-                <ArrowUpRight size={15} />
-              </button>
-            </div>
-          </div>
-          <footer className="page-footer">
-            <span>
-              POKÉMON TEAM LAB <i>·</i> El laboratorio de tu próxima victoria.
-            </span>
-            <span>
-              Datos de{' '}
-              <a href="https://pokeapi.co/" target="_blank" rel="noreferrer">
-                PokéAPI
-              </a>{' '}
-              <i>·</i> Cálculos de{' '}
-              <a href="https://github.com/smogon/damage-calc" target="_blank" rel="noreferrer">
-                Smogon
-              </a>
-            </span>
-          </footer>
+                )}
+              </div>
+              <div className="action-bar">
+                <div className="selection-status">
+                  <span className="selection-icon">
+                    <Check size={16} />
+                  </span>
+                  <strong>
+                    {selected.length}{' '}
+                    {selected.length === 1 ? 'plaza seleccionada' : 'plazas seleccionadas'}
+                  </strong>
+                  {selected.length > 0 && <button onClick={() => setSelected([])}>Limpiar</button>}
+                </div>
+                <div className="selection-actions">
+                  <button
+                    className="button secondary"
+                    disabled={!single || busy}
+                    onClick={() => single && setEditor(single)}
+                  >
+                    <Pencil size={16} />
+                    {single && teams[single.team].slots[single.slot] ? 'Editar' : 'Añadir / editar'}
+                  </button>
+                  <button
+                    className="button secondary save-build-button"
+                    aria-label="Guardar configuración"
+                    disabled={!single || !teams[single.team].slots[single.slot] || busy}
+                    onClick={() => {
+                      if (!single) return;
+                      const member = teams[single.team].slots[single.slot]!;
+                      try {
+                        saveConfiguration(member, '');
+                      } catch (e) {
+                        setMessage(errorText(e));
+                      }
+                    }}
+                  >
+                    <Save size={16} />
+                    <span>Guardar configuración</span>
+                  </button>
+                  <button
+                    className="button danger"
+                    aria-label="Borrar"
+                    disabled={!occupiedSelection.length || busy}
+                    onClick={() => setDeleteSlots(occupiedSelection)}
+                  >
+                    <Trash2 size={16} />
+                    <span>Borrar</span>
+                  </button>
+                  <button
+                    className="button primary"
+                    disabled={!canBattle || busy}
+                    onClick={startBattle}
+                  >
+                    <Swords size={17} />
+                    Enfrentar Pokémon
+                    <ArrowUpRight size={15} />
+                  </button>
+                </div>
+              </div>
+              <footer className="page-footer">
+                <span>
+                  POKÉMON TEAM LAB <i>·</i> El laboratorio de tu próxima victoria.
+                </span>
+                <span>
+                  Datos de{' '}
+                  <a href="https://pokeapi.co/" target="_blank" rel="noreferrer">
+                    PokéAPI
+                  </a>{' '}
+                  <i>·</i> Cálculos de{' '}
+                  <a href="https://github.com/smogon/damage-calc" target="_blank" rel="noreferrer">
+                    Smogon
+                  </a>
+                </span>
+              </footer>
+            </>
+          )}
         </main>
       </div>
       {editor && (
@@ -526,6 +714,7 @@ export default function App() {
           member={teams[editor.team].slots[editor.slot]}
           gen={gen}
           onSave={save}
+          onSaveConfiguration={saveConfiguration}
           onClose={() => setEditor(null)}
         />
       )}{' '}
@@ -540,26 +729,31 @@ export default function App() {
         />
       )}{' '}
       {battle && <Calculator members={battle} gen={gen} onClose={() => setBattle(null)} />}{' '}
-      {deleteSlot && (
-        <Modal title="Borrar Pokémon" onClose={() => setDeleteSlot(null)}>
+      {deleteSlots && (
+        <Modal title="Borrar Pokémon" onClose={() => setDeleteSlots(null)}>
           <p>
-            ¿Quieres liberar la plaza de{' '}
-            <strong>{teams[deleteSlot.team].slots[deleteSlot.slot]?.data.name}</strong> en{' '}
-            {teams[deleteSlot.team].name}?
+            ¿Quieres borrar los {deleteSlots.length} Pokémon seleccionados y liberar sus plazas?
           </p>
+          <ul className="delete-list">
+            {deleteSlots.map((slot) => (
+              <li key={`${slot.team}-${slot.slot}`}>
+                {teams[slot.team].slots[slot.slot]?.data.name} · {teams[slot.team].name}
+              </li>
+            ))}
+          </ul>
           <footer className="modal-footer">
-            <button className="button secondary" onClick={() => setDeleteSlot(null)}>
+            <button className="button secondary" onClick={() => setDeleteSlots(null)}>
               Cancelar
             </button>
             <button
               className="button danger"
               onClick={() => {
                 const next = structuredClone(teams);
-                next[deleteSlot.team].slots[deleteSlot.slot] = null;
+                for (const slot of deleteSlots) next[slot.team].slots[slot.slot] = null;
                 changeTeams(next);
                 setSelected([]);
-                setDeleteSlot(null);
-                setMessage('Plaza liberada.');
+                setDeleteSlots(null);
+                setMessage(`${deleteSlots.length} Pokémon borrados. Plazas liberadas.`);
               }}
             >
               Borrar Pokémon
@@ -600,9 +794,9 @@ export default function App() {
             </li>
           </ol>
           <p className="small muted">
-            Perfil elegido: mecánicas de Showdown de generaciones I–IX con IVs/EVs y nivel 50 por
-            defecto. No aplica la distribución de Stat Points ni el catálogo exclusivo de Champions.
-            Al cambiar de generación se vuelven a validar los equipos; si hay incompatibilidades, se
+            Perfiles disponibles: generaciones I–IX y Pokémon Champions, con 0–32 SP por estadística
+            y un máximo de 66 SP. Guarda builds en «Mis configuraciones» y descárgalos como .txt. Al
+            cambiar de generación se vuelven a validar los equipos; si hay incompatibilidades, se
             conserva la anterior.
           </p>
         </Modal>

@@ -1,16 +1,34 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, Search, LoaderCircle, Sparkles, Save, Clipboard, Download } from 'lucide-react';
+import {
+  X,
+  Search,
+  LoaderCircle,
+  Sparkles,
+  Save,
+  Clipboard,
+  Download,
+  ArrowUp,
+  ArrowDown,
+  FolderHeart,
+  Package,
+} from 'lucide-react';
 import {
   calcPokemon,
   createMember,
   stats,
   statLabels,
   validateMember,
+  apiGeneration,
+  mechanicsLabel,
+  trainingLimits,
+  natureLabel,
+  natureEffect,
+  type Stat,
   type Member,
   type Gen,
   type Team,
 } from './model';
-import { loadPokemon, names } from './api';
+import { loadPokemon, loadItemSprite, names } from './api';
 import { exportShowdown, importShowdown } from './showdown';
 export const errorText = (e: unknown) =>
   e instanceof Error ? e.message : 'Ha ocurrido un error. Inténtalo de nuevo.';
@@ -64,6 +82,43 @@ export function Modal({
     </dialog>
   );
 }
+function ItemSprite({ item }: { item: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadItemSprite(item).then(
+      (url) => {
+        if (active) setSrc(url);
+      },
+      () => {
+        if (active) setSrc(null);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [item]);
+  return (
+    <span className="equipped-item" title={`Objeto equipado: ${item}`}>
+      {src ? (
+        <img
+          src={src}
+          alt={`Objeto equipado: ${item}`}
+          width={30}
+          height={30}
+          loading="lazy"
+          onError={() => setSrc(null)}
+        />
+      ) : (
+        <Package
+          size={18}
+          role="img"
+          aria-label={`Objeto equipado: ${item} (imagen no disponible)`}
+        />
+      )}
+    </span>
+  );
+}
 export function Sprite({ member, large = false }: { member: Member; large?: boolean }) {
   const [broken, setBroken] = useState(false);
   const src = member.shiny ? member.data.shinySprite : member.data.sprite;
@@ -81,6 +136,7 @@ export function Sprite({ member, large = false }: { member: Member; large?: bool
         />
       )}
       {member.shiny && <Sparkles size={16} className="shiny-star" aria-label="Variocolor" />}
+      {member.item && <ItemSprite key={member.item} item={member.item} />}
     </div>
   );
 }
@@ -115,21 +171,50 @@ export function Types({ types }: { types: string[] }) {
     </span>
   );
 }
+export function NatureIndicator({ nature, stat, gen }: { nature: string; stat: Stat; gen: Gen }) {
+  if (apiGeneration(gen) < 3) return null;
+  const effect = natureEffect(nature);
+  if (effect.plus === stat)
+    return (
+      <ArrowUp
+        className="nature-up"
+        size={15}
+        role="img"
+        aria-label={`Sube ${statLabels[stat]} por naturaleza`}
+      />
+    );
+  if (effect.minus === stat)
+    return (
+      <ArrowDown
+        className="nature-down"
+        size={15}
+        role="img"
+        aria-label={`Baja ${statLabels[stat]} por naturaleza`}
+      />
+    );
+  return null;
+}
 export function Editor({
   member,
   gen,
   onSave,
   onClose,
+  onSaveConfiguration,
 }: {
   member: Member | null;
   gen: Gen;
   onSave: (m: Member) => void;
   onClose: () => void;
+  onSaveConfiguration?: (m: Member, name: string) => void;
 }) {
   const [draft, setDraft] = useState<Member | null>(member ? structuredClone(member) : null),
     [query, setQuery] = useState(member?.data.name || ''),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [configurationName, setConfigurationName] = useState(''),
+    [configurationSaved, setConfigurationSaved] = useState(false);
+  const era = apiGeneration(gen),
+    limits = trainingLimits(gen);
   const pokemonNames = names(gen, 'species'),
     items = names(gen, 'items'),
     natures = names(gen, 'natures');
@@ -161,10 +246,21 @@ export function Editor({
       setError(errorText(e));
     }
   }
+  function saveConfiguration() {
+    if (!draft || !onSaveConfiguration) return;
+    setError('');
+    try {
+      validateMember(draft, gen);
+      onSaveConfiguration(draft, configurationName);
+      setConfigurationSaved(true);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
   return (
     <Modal
       title={member ? 'Editar Pokémon' : 'Añadir Pokémon'}
-      subtitle={`Generación ${gen} · Personaliza cada detalle de tu estrategia`}
+      subtitle={`${mechanicsLabel(gen)} · Personaliza cada detalle de tu estrategia`}
       onClose={onClose}
       wide
     >
@@ -233,6 +329,7 @@ export function Editor({
                     type="number"
                     min="1"
                     max="100"
+                    disabled={gen === 0}
                     value={draft.level}
                     onChange={(e) => update('level', Number(e.target.value))}
                   />
@@ -253,11 +350,11 @@ export function Editor({
                 <label>
                   Habilidad
                   <select
-                    disabled={gen < 3}
+                    disabled={era < 3}
                     value={draft.ability}
                     onChange={(e) => update('ability', e.target.value)}
                   >
-                    {gen < 3 ? (
+                    {era < 3 ? (
                       <option value="">No existe en esta generación</option>
                     ) : (
                       draft.data.abilities.map((a) => <option key={a}>{a}</option>)
@@ -267,19 +364,21 @@ export function Editor({
                 <label>
                   Naturaleza
                   <select
-                    disabled={gen < 3}
+                    disabled={era < 3}
                     value={draft.nature}
                     onChange={(e) => update('nature', e.target.value)}
                   >
                     {natures.map((n) => (
-                      <option key={n}>{n}</option>
+                      <option key={n} value={n}>
+                        {natureLabel(n)}
+                      </option>
                     ))}
                   </select>
                 </label>
                 <label className="span-2">
                   Objeto equipado
                   <select
-                    disabled={gen < 2}
+                    disabled={era < 2}
                     value={draft.item}
                     onChange={(e) => update('item', e.target.value)}
                   >
@@ -318,9 +417,11 @@ export function Editor({
           <div className="stats-header">
             <h4>Características</h4>
             <span
-              className={stats.reduce((v, s) => v + draft.evs[s], 0) > 510 ? 'text-error' : 'muted'}
+              className={
+                stats.reduce((v, s) => v + draft.evs[s], 0) > limits.total ? 'text-error' : 'muted'
+              }
             >
-              EVs: {stats.reduce((v, s) => v + draft.evs[s], 0)} / 510
+              {limits.label}: {stats.reduce((v, s) => v + draft.evs[s], 0)} / {limits.total}
             </span>
           </div>
           <div className="stat-table">
@@ -328,27 +429,30 @@ export function Editor({
               <span>Estadística</span>
               <span>Base</span>
               <span>IV</span>
-              <span>EV</span>
+              <span>{gen === 0 ? 'SP' : 'EV'}</span>
               <span>Total</span>
             </div>
             {stats.map((s) => (
               <div className="stat-row" key={s}>
-                <span>{statLabels[s]}</span>
+                <span className="stat-name">
+                  {statLabels[s]} <NatureIndicator nature={draft.nature} stat={s} gen={gen} />
+                </span>
                 <span>{calculated!.species.baseStats[s]}</span>
                 <input
                   aria-label={`IV ${statLabels[s]}`}
                   type="number"
                   min="0"
                   max="31"
+                  disabled={gen === 0}
                   value={draft.ivs[s]}
                   onChange={(e) => update('ivs', { ...draft.ivs, [s]: Number(e.target.value) })}
                 />
                 <input
                   aria-label={`EV ${statLabels[s]}`}
                   type="number"
-                  disabled={gen < 3}
+                  disabled={era < 3}
                   min="0"
-                  max="252"
+                  max={limits.perStat}
                   value={draft.evs[s]}
                   onChange={(e) => update('evs', { ...draft.evs, [s]: Number(e.target.value) })}
                 />
@@ -356,7 +460,13 @@ export function Editor({
               </div>
             ))}
           </div>
-          {gen < 3 && (
+          {gen === 0 && (
+            <p className="small muted champions-editor-note">
+              Champions: nivel 50, IVs perfectos y hasta 32 SP por característica (66 en total). Los
+              SP se aplican dentro del modificador de naturaleza.
+            </p>
+          )}
+          {era < 3 && (
             <p className="small muted">
               En generaciones I–II, Smogon convierte los IVs al modelo de DVs y asume entrenamiento
               máximo. Los EVs, naturalezas y habilidades no se aplican; los DVs de PS se derivan de
@@ -406,6 +516,31 @@ export function Editor({
             Al cambiar los IVs, EVs o nivel se conserva el porcentaje de PS.
           </p>
           <footer className="modal-footer">
+            {onSaveConfiguration && (
+              <div className="save-configuration">
+                <label>
+                  Nombre de configuración
+                  <input
+                    value={configurationName}
+                    maxLength={80}
+                    placeholder={`${draft.data.name} · ${draft.nature}`}
+                    onChange={(e) => {
+                      setConfigurationName(e.target.value);
+                      setConfigurationSaved(false);
+                    }}
+                  />
+                </label>
+                <button className="button secondary" disabled={busy} onClick={saveConfiguration}>
+                  <FolderHeart size={17} />
+                  Guardar configuración
+                </button>
+                {configurationSaved && (
+                  <p role="status" className="small">
+                    Configuración guardada en tu biblioteca.
+                  </p>
+                )}
+              </div>
+            )}
             <button className="button secondary" onClick={onClose}>
               Cancelar
             </button>

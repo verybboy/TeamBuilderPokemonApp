@@ -1,4 +1,4 @@
-import { generations, id, type Gen, type PokemonData, type Spread } from './model';
+import { generations, id, apiGeneration, type Gen, type PokemonData, type Spread } from './model';
 const API = 'https://pokeapi.co/api/v2/';
 const memory = new Map<string, unknown>();
 const pending = new Map<string, Promise<unknown>>();
@@ -81,6 +81,29 @@ export const names = (gen: Gen, kind: 'species' | 'moves' | 'abilities' | 'items
   Array.from<{ name: string }>(generations.get(gen)[kind])
     .map((x) => x.name)
     .sort((a, b) => a.localeCompare(b));
+export async function loadItemSprite(item: string): Promise<string | null> {
+  if (!item) return null;
+  const aliases: Record<string, string> = {
+    blackglasses: 'black-glasses',
+    brightpowder: 'bright-powder',
+    deepseascale: 'deep-sea-scale',
+    deepseatooth: 'deep-sea-tooth',
+    nevermeltice: 'never-melt-ice',
+    silverpowder: 'silver-powder',
+    twistedspoon: 'twisted-spoon',
+  };
+  let slug = aliases[id(item)] || item.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  if (slug.endsWith('ium-z')) slug += '--held';
+  const fallback = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/gen9/${slug}.png`;
+  try {
+    const data = await request<{ sprites: { default: string | null } }>(`item/${slug}`);
+    // Recent items have sprites in the repository before the API exposes them.
+    return data.sprites.default || fallback;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return fallback;
+    throw error;
+  }
+}
 const aliases: Record<string, string> = {
   nidoranf: 'nidoran-f',
   nidoranm: 'nidoran-m',
@@ -200,14 +223,14 @@ export async function loadPokemon(input: string, gen: Gen): Promise<PokemonData>
   );
   const versionSet = new Set(
     versionData
-      .filter((v) => Number(v.generation.url.match(/\/(\d+)\/$/)?.[1]) === gen)
+      .filter((v) => Number(v.generation.url.match(/\/(\d+)\/$/)?.[1]) === apiGeneration(gen))
       .map((v) => v.name),
   );
   const g = generations.get(gen);
   const genNumber = (generation: Named) => Number(generation.url.match(/\/(\d+)\/$/)?.[1]);
   const historical = <T extends { generation: Named }>(entries: T[] = []) =>
     entries
-      .filter((entry) => gen <= genNumber(entry.generation))
+      .filter((entry) => apiGeneration(gen) <= genNumber(entry.generation))
       .sort((a, b) => genNumber(b.generation) - genNumber(a.generation));
   const abilitySlots = new Map(
     raw.abilities.map((ability, index) => [ability.slot ?? index + 1, ability.ability]),
