@@ -37,6 +37,8 @@ import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
 import Library from './ConfigurationLibrary';
+import DefensiveCoverage from './DefensiveCoverage';
+import { SaveTeamDialog, ClearTeamDialog } from './TeamDialogs';
 import { moveInfo } from './moves';
 import { MoveType } from './MovePicker';
 import {
@@ -45,6 +47,11 @@ import {
   addConfiguration,
   persistLibrary,
   type SavedConfiguration,
+  TEAM_LIBRARY_KEY,
+  restoreTeamLibrary,
+  addTeamConfiguration,
+  persistTeamLibrary,
+  type SavedTeamConfiguration,
 } from './library';
 const STORAGE = 'pokemon-team-lab:v1';
 type Slot = { team: number; slot: number };
@@ -74,10 +81,21 @@ function initialTheme(): 'light' | 'dark' {
   } catch {}
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
+function initialTeamLibrary() {
+  try {
+    return restoreTeamLibrary(localStorage.getItem(TEAM_LIBRARY_KEY));
+  } catch {
+    return { entries: [], invalid: false };
+  }
+}
 export default function App() {
   const [initial] = useState(initialState),
     [libraryInitial] = useState(initialLibrary),
     [configurations, setConfigurations] = useState(libraryInitial.entries),
+    [teamLibraryInitial] = useState(initialTeamLibrary),
+    [savedTeams, setSavedTeams] = useState(teamLibraryInitial.entries),
+    [savingTeam, setSavingTeam] = useState<number | null>(null),
+    [clearingTeam, setClearingTeam] = useState<number | null>(null),
     [view, setView] = useState<'teams' | 'library'>('teams'),
     [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
@@ -141,6 +159,61 @@ export default function App() {
     }
     setConfigurations(result.entries);
     setMessage(`${result.entry.name} guardada en tu biblioteca.`);
+  }
+  function updateTeamLibrary(entries: SavedTeamConfiguration[]) {
+    try {
+      persistTeamLibrary(entries);
+    } catch {
+      throw new Error('No se pudo guardar la biblioteca de equipos en este navegador.');
+    }
+    setSavedTeams(entries);
+  }
+  function saveTeam(team: Team, name: string) {
+    const result = addTeamConfiguration(savedTeams, team, gen, name);
+    updateTeamLibrary(result.entries);
+    setMessage(`${result.entry.name} guardado en Mis equipos.`);
+  }
+  async function importTeamConfiguration(text: string, name: string) {
+    setBusy(true);
+    try {
+      const members = await importShowdown(text, gen);
+      saveTeam({ name, slots: [...members, ...Array(6 - members.length).fill(null)] }, name);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function loadTeamConfiguration(entry: SavedTeamConfiguration, destination: number) {
+    setBusy(true);
+    try {
+      const snapshot = structuredClone(entry.team);
+      for (let i = 0; i < snapshot.slots.length; i++) {
+        if (!snapshot.slots[i]) continue;
+        const member = convertMemberProfile(snapshot.slots[i]!, entry.gen, gen);
+        member.data = await loadPokemon(member.data.name, gen);
+        validateMember(member, gen);
+        snapshot.slots[i] = member;
+      }
+      const next = structuredClone(teams);
+      next[destination] = snapshot;
+      changeTeams(next);
+      setSelected((selected) => selected.filter((slot) => slot.team !== destination));
+      setMessage(`${entry.name} cargado en el equipo ${destination + 1}.`);
+    } catch (e) {
+      throw new Error(`No se ha cargado el equipo: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function renameTeamConfiguration(entry: SavedTeamConfiguration, name: string) {
+    updateTeamLibrary(
+      savedTeams.map((value) =>
+        value.id === entry.id ? { ...value, name, team: { ...value.team, name } } : value,
+      ),
+    );
+  }
+  function deleteTeamConfiguration(entry: SavedTeamConfiguration) {
+    updateTeamLibrary(savedTeams.filter((value) => value.id !== entry.id));
+    setMessage(`${entry.name} eliminado de Mis equipos.`);
   }
   async function addFromLibrary(entry: SavedConfiguration, team: number) {
     const free = teams[team].slots.findIndex((slot) => !slot);
@@ -400,6 +473,12 @@ export default function App() {
               )}
               <Library
                 entries={configurations}
+                savedTeams={savedTeams}
+                teamsInvalid={teamLibraryInitial.invalid && savedTeams.length === 0}
+                onLoadTeam={loadTeamConfiguration}
+                onImportTeam={importTeamConfiguration}
+                onRenameTeam={renameTeamConfiguration}
+                onDeleteTeam={deleteTeamConfiguration}
                 teams={teams}
                 gen={gen}
                 busy={busy}
@@ -475,20 +554,40 @@ export default function App() {
                   <section className={`team-panel team-${t}`} key={t}>
                     <header className="team-header">
                       <div className="team-avatar">{t === 0 ? 'A' : 'E'}</div>
-                      <div>
+                      <div className="team-name-block">
                         <p className="eyebrow">EQUIPO {String(t + 1).padStart(2, '0')}</p>
-                        <input
-                          className="team-name"
-                          aria-label={`Nombre equipo ${t + 1}`}
-                          value={team.name}
-                          maxLength={40}
-                          disabled={busy}
-                          onChange={(e) => {
-                            const next = structuredClone(teams);
-                            next[t].name = e.target.value;
-                            changeTeams(next);
-                          }}
-                        />
+                        <div className="team-name-actions">
+                          <input
+                            className="team-name"
+                            aria-label={`Nombre equipo ${t + 1}`}
+                            value={team.name}
+                            maxLength={40}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const next = structuredClone(teams);
+                              next[t].name = e.target.value;
+                              changeTeams(next);
+                            }}
+                          />
+                          <button
+                            className="icon-button"
+                            disabled={busy || !team.slots.some(Boolean)}
+                            title="Guardar en Mis equipos"
+                            aria-label={`Guardar equipo ${t + 1}`}
+                            onClick={() => setSavingTeam(t)}
+                          >
+                            <Save size={17} />
+                          </button>
+                          <button
+                            className="icon-button team-clear"
+                            disabled={busy || !team.slots.some(Boolean)}
+                            title="Limpiar equipo entero"
+                            aria-label={`Limpiar equipo ${t + 1}`}
+                            onClick={() => setClearingTeam(t)}
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
                       </div>
                       <span className="team-count">
                         {team.slots.filter(Boolean).length}
@@ -598,6 +697,7 @@ export default function App() {
                         Exportar equipo <ArrowUpRight size={14} />
                       </button>
                     </footer>
+                    <DefensiveCoverage team={team} gen={gen} />
                   </section>
                 ))}
               </div>
@@ -711,6 +811,26 @@ export default function App() {
         />
       )}{' '}
       {battle && <Calculator members={battle} gen={gen} onClose={() => setBattle(null)} />}{' '}
+      {savingTeam !== null && (
+        <SaveTeamDialog
+          team={teams[savingTeam]}
+          onSave={(name) => saveTeam(teams[savingTeam], name)}
+          onClose={() => setSavingTeam(null)}
+        />
+      )}
+      {clearingTeam !== null && (
+        <ClearTeamDialog
+          team={teams[clearingTeam]}
+          onClose={() => setClearingTeam(null)}
+          onClear={() => {
+            const next = structuredClone(teams);
+            next[clearingTeam].slots = Array(6).fill(null);
+            changeTeams(next);
+            setSelected((selected) => selected.filter((slot) => slot.team !== clearingTeam));
+            setMessage(`${teams[clearingTeam].name} limpiado.`);
+          }}
+        />
+      )}
       {deleteSlots && (
         <Modal title="Borrar Pokémon" onClose={() => setDeleteSlots(null)}>
           <p>

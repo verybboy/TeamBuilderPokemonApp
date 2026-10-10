@@ -122,7 +122,15 @@ function ItemSprite({ item }: { item: string }) {
     </span>
   );
 }
-export function Sprite({ member, large = false }: { member: Member; large?: boolean }) {
+export function Sprite({
+  member,
+  large = false,
+  showItem = true,
+}: {
+  member: Member;
+  large?: boolean;
+  showItem?: boolean;
+}) {
   const [broken, setBroken] = useState(false);
   const src = member.shiny ? member.data.shinySprite : member.data.sprite;
   useEffect(() => setBroken(false), [src]);
@@ -139,7 +147,7 @@ export function Sprite({ member, large = false }: { member: Member; large?: bool
         />
       )}
       {member.shiny && <Sparkles size={16} className="shiny-star" aria-label="Variocolor" />}
-      {member.item && <ItemSprite key={member.item} item={member.item} />}
+      {showItem && member.item && <ItemSprite key={member.item} item={member.item} />}
     </div>
   );
 }

@@ -11,10 +11,22 @@ import {
 } from 'lucide-react';
 import { Sprite, Types, Modal, ShowdownExport, errorText } from './components';
 import { mechanicsLabel, natureLabel, stats, trainingLimits, type Gen, type Team } from './model';
-import { configurationFilename, type SavedConfiguration } from './library';
+import {
+  alphabetical,
+  configurationFilename,
+  type SavedConfiguration,
+  type SavedTeamConfiguration,
+} from './library';
+import SavedTeams from './SavedTeams';
 import { exportShowdown } from './showdown';
 export default function Library({
   entries,
+  savedTeams,
+  teamsInvalid,
+  onLoadTeam,
+  onImportTeam,
+  onRenameTeam,
+  onDeleteTeam,
   teams,
   gen,
   busy,
@@ -26,6 +38,12 @@ export default function Library({
   onChangeMechanics,
 }: {
   entries: SavedConfiguration[];
+  savedTeams: SavedTeamConfiguration[];
+  teamsInvalid: boolean;
+  onLoadTeam: (entry: SavedTeamConfiguration, team: number) => Promise<void>;
+  onImportTeam: (text: string, name: string) => Promise<void>;
+  onRenameTeam: (entry: SavedTeamConfiguration, name: string) => void;
+  onDeleteTeam: (entry: SavedTeamConfiguration) => void;
   teams: Team[];
   gen: Gen;
   busy: boolean;
@@ -37,6 +55,7 @@ export default function Library({
   onChangeMechanics: (gen: Gen) => Promise<void>;
 }) {
   const [query, setQuery] = useState(''),
+    [tab, setTab] = useState<'pokemon' | 'teams'>('pokemon'),
     [team, setTeam] = useState(0),
     [fileBusy, setFileBusy] = useState(false),
     [error, setError] = useState(''),
@@ -45,11 +64,18 @@ export default function Library({
     [exporting, setExporting] = useState<SavedConfiguration | null>(null),
     [name, setName] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
-  const visible = entries.filter((entry) =>
-    `${entry.name} ${entry.member.data.name} ${entry.member.nature} ${entry.member.moves.join(' ')}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
+  const visible = entries
+    .filter((entry) =>
+      `${entry.name} ${entry.member.data.name} ${entry.member.nature} ${entry.member.moves.join(' ')}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        alphabetical(a.member.data.name, b.member.data.name) ||
+        alphabetical(a.name, b.name) ||
+        alphabetical(a.id, b.id),
+    );
   async function readFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -58,7 +84,10 @@ export default function Library({
     setFileBusy(true);
     try {
       if (file.size > 30000) throw new Error('El archivo no puede superar 30 KB.');
-      await onImport(await file.text(), file.name.replace(/\.txt$/i, ''));
+      await (tab === 'pokemon' ? onImport : onImportTeam)(
+        await file.text(),
+        file.name.replace(/\.txt$/i, ''),
+      );
     } catch (error) {
       setError(errorText(error));
     } finally {
@@ -71,9 +100,11 @@ export default function Library({
         <div>
           <p className="eyebrow">TU COLECCIÓN DE ESTRATEGIAS</p>
           <h1>
-            Mis configuraciones <span className="pill">{entries.length}</span>
+            Mis configuraciones <span className="pill">{entries.length + savedTeams.length}</span>
           </h1>
-          <p>Guarda tus builds favoritos. Compáralos y llévalos a un equipo con un clic.</p>
+          <p>
+            Guarda tus Pokémon y equipos favoritos. Consulta sus configuraciones y reutilízalas.
+          </p>
         </div>
         <button
           className="button primary"
@@ -92,6 +123,36 @@ export default function Library({
           onChange={(e) => void readFile(e)}
         />
       </div>
+      <div className="library-tabs" role="tablist" aria-label="Tipo de configuración">
+        <button
+          id="pokemon-library-tab"
+          role="tab"
+          aria-selected={tab === 'pokemon'}
+          aria-controls="pokemon-library-panel"
+          disabled={busy || fileBusy}
+          onClick={() => {
+            setTab('pokemon');
+            setQuery('');
+            setError('');
+          }}
+        >
+          Mis Pokémon <span className="pill">{entries.length}</span>
+        </button>
+        <button
+          id="team-library-tab"
+          role="tab"
+          aria-selected={tab === 'teams'}
+          aria-controls="team-library-panel"
+          disabled={busy || fileBusy}
+          onClick={() => {
+            setTab('teams');
+            setQuery('');
+            setError('');
+          }}
+        >
+          Mis equipos <span className="pill">{savedTeams.length}</span>
+        </button>
+      </div>
       <div className="library-controls">
         <label className="library-search">
           <Search size={17} />
@@ -99,7 +160,11 @@ export default function Library({
             aria-label="Buscar configuraciones"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Busca por Pokémon, build, naturaleza o movimiento…"
+            placeholder={
+              tab === 'pokemon'
+                ? 'Busca por Pokémon, build, naturaleza o movimiento…'
+                : 'Busca por nombre del equipo o Pokémon…'
+            }
           />
         </label>
         <label>
@@ -134,7 +199,7 @@ export default function Library({
         de ocupar una plaza. Los .txt de Champions usan los valores SP (0–32) en la línea EVs;
         impórtalos con Champions seleccionado.
       </p>
-      {invalid && (
+      {(tab === 'pokemon' ? invalid : teamsInvalid) && (
         <p className="error" role="alert">
           No se pudo restaurar la biblioteca. El guardado anterior se conserva hasta que guardes o
           importes una configuración.
@@ -145,142 +210,161 @@ export default function Library({
           {error}
         </p>
       )}
-      {visible.length ? (
-        <div className="library-table-scroll">
-          <table className="library-table">
-            <caption className="sr-only">
-              Configuraciones guardadas con reparto de EVs o SP, naturaleza y movimientos
-            </caption>
-            <thead>
-              <tr>
-                <th>Pokémon / Configuración</th>
-                <th>Perfil</th>
-                <th>
-                  <span>Reparto EVs / SP</span>
-                  <div className="spread-grid">
-                    {['PS', 'Atk', 'Def', 'SpA', 'SpD', 'Vel'].map((stat) => (
-                      <span key={stat}>{stat}</span>
-                    ))}
-                  </div>
-                </th>
-                <th>Naturaleza</th>
-                <th>Movimientos</th>
-                <th>Habilidad / Objeto</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((entry) => {
-                const m = entry.member;
-                return (
-                  <tr key={entry.id}>
-                    <td>
-                      <div className="library-pokemon">
-                        <Sprite member={m} />
-                        <div>
-                          <strong>{m.data.name}</strong>
-                          <span>{entry.name}</span>
-                          <small>
-                            Nv. {m.level} ·{' '}
-                            {m.gender === 'M' ? '♂' : m.gender === 'F' ? '♀' : 'Sin sexo'}
-                            {m.shiny ? ' · ✨' : ''}
-                          </small>
-                          <Types types={m.data.types} />
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`profile-badge ${entry.gen === 0 ? 'champions' : ''}`}>
-                        {mechanicsLabel(entry.gen)}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="spread-grid values">
-                        {stats.map((stat) => (
-                          <b key={stat}>{m.evs[stat]}</b>
-                        ))}
-                      </div>
-                      <small>
-                        {stats.reduce((sum, stat) => sum + m.evs[stat], 0)} /{' '}
-                        {trainingLimits(entry.gen).total} {trainingLimits(entry.gen).label}
-                      </small>
-                      <small className="library-ivs">
-                        IVs: {stats.map((stat) => m.ivs[stat]).join(' / ')}
-                      </small>
-                    </td>
-                    <td>
-                      <span className="library-nature">{natureLabel(m.nature)}</span>
-                    </td>
-                    <td>
-                      <div className="library-moves">
-                        {m.moves.filter(Boolean).map((move) => (
-                          <span key={move}>{move}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <strong className="library-ability">{m.ability || 'Sin habilidad'}</strong>
-                      <span className="library-item">{m.item || 'Sin objeto'}</span>
-                    </td>
-                    <td>
-                      <div className="library-actions">
-                        <button
-                          className="button primary compact"
-                          disabled={busy || fileBusy || teams[team].slots.every(Boolean)}
-                          aria-label={`Añadir ${entry.name} a ${teams[team].name}`}
-                          onClick={() => void onAdd(entry, team)}
-                        >
-                          <Plus size={15} />
-                          Añadir
-                        </button>
-                        <button
-                          className="button secondary compact"
-                          aria-label={`Exportar ${entry.name}`}
-                          onClick={() => setExporting(entry)}
-                        >
-                          <ArrowUpFromLine size={14} />
-                          Exportar
-                        </button>
-                        <button
-                          className="icon-button"
-                          aria-label={`Renombrar ${entry.name}`}
-                          onClick={() => {
-                            setRenaming(entry);
-                            setName(entry.name);
-                            setError('');
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          className="button danger compact"
-                          disabled={busy || fileBusy}
-                          aria-label={`Eliminar ${entry.name}`}
-                          onClick={() => {
-                            setDeleting(entry);
-                            setError('');
-                          }}
-                        >
-                          <Trash2 size={14} />
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {tab === 'teams' ? (
+        <div id="team-library-panel" role="tabpanel" aria-labelledby="team-library-tab">
+          <SavedTeams
+            entries={savedTeams}
+            query={query}
+            destination={team}
+            teams={teams}
+            busy={busy || fileBusy}
+            onLoad={onLoadTeam}
+            onRename={onRenameTeam}
+            onDelete={onDeleteTeam}
+          />
         </div>
       ) : (
-        <div className="library-empty">
-          <FolderHeart size={44} />
-          <h2>{query ? 'No hay coincidencias' : 'Tu próxima estrategia merece guardarse'}</h2>
-          <p>
-            {query
-              ? 'Prueba otro nombre, naturaleza o movimiento.'
-              : 'En el editor, pulsa «Guardar configuración». También puedes guardar un Pokémon seleccionado o importar un archivo Showdown.'}
-          </p>
+        <div id="pokemon-library-panel" role="tabpanel" aria-labelledby="pokemon-library-tab">
+          {visible.length ? (
+            <div className="library-table-scroll">
+              <table className="library-table">
+                <caption className="sr-only">
+                  Configuraciones guardadas con reparto de EVs o SP, naturaleza y movimientos
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Pokémon / Configuración</th>
+                    <th>Perfil</th>
+                    <th>
+                      <span>Reparto EVs / SP</span>
+                      <div className="spread-grid">
+                        {['PS', 'Atk', 'Def', 'SpA', 'SpD', 'Vel'].map((stat) => (
+                          <span key={stat}>{stat}</span>
+                        ))}
+                      </div>
+                    </th>
+                    <th>Naturaleza</th>
+                    <th>Movimientos</th>
+                    <th>Habilidad / Objeto</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((entry) => {
+                    const m = entry.member;
+                    return (
+                      <tr key={entry.id}>
+                        <td>
+                          <div className="library-pokemon">
+                            <Sprite member={m} />
+                            <div>
+                              <strong>{m.data.name}</strong>
+                              <span>{entry.name}</span>
+                              <small>
+                                Nv. {m.level} ·{' '}
+                                {m.gender === 'M' ? '♂' : m.gender === 'F' ? '♀' : 'Sin sexo'}
+                                {m.shiny ? ' · ✨' : ''}
+                              </small>
+                              <Types types={m.data.types} />
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`profile-badge ${entry.gen === 0 ? 'champions' : ''}`}>
+                            {mechanicsLabel(entry.gen)}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="spread-grid values">
+                            {stats.map((stat) => (
+                              <b key={stat}>{m.evs[stat]}</b>
+                            ))}
+                          </div>
+                          <small>
+                            {stats.reduce((sum, stat) => sum + m.evs[stat], 0)} /{' '}
+                            {trainingLimits(entry.gen).total} {trainingLimits(entry.gen).label}
+                          </small>
+                          <small className="library-ivs">
+                            IVs: {stats.map((stat) => m.ivs[stat]).join(' / ')}
+                          </small>
+                        </td>
+                        <td>
+                          <span className="library-nature">{natureLabel(m.nature)}</span>
+                        </td>
+                        <td>
+                          <div className="library-moves">
+                            {m.moves.filter(Boolean).map((move) => (
+                              <span key={move}>{move}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <strong className="library-ability">
+                            {m.ability || 'Sin habilidad'}
+                          </strong>
+                          <span className="library-item">{m.item || 'Sin objeto'}</span>
+                        </td>
+                        <td>
+                          <div className="library-actions">
+                            <button
+                              className="button primary compact"
+                              disabled={busy || fileBusy || teams[team].slots.every(Boolean)}
+                              aria-label={`Añadir ${entry.name} a ${teams[team].name}`}
+                              onClick={() => void onAdd(entry, team)}
+                            >
+                              <Plus size={15} />
+                              Añadir
+                            </button>
+                            <button
+                              className="button secondary compact"
+                              aria-label={`Exportar ${entry.name}`}
+                              onClick={() => setExporting(entry)}
+                            >
+                              <ArrowUpFromLine size={14} />
+                              Exportar
+                            </button>
+                            <button
+                              className="icon-button"
+                              aria-label={`Renombrar ${entry.name}`}
+                              onClick={() => {
+                                setRenaming(entry);
+                                setName(entry.name);
+                                setError('');
+                              }}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              className="button danger compact"
+                              disabled={busy || fileBusy}
+                              aria-label={`Eliminar ${entry.name}`}
+                              onClick={() => {
+                                setDeleting(entry);
+                                setError('');
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="library-empty">
+              <FolderHeart size={44} />
+              <h2>{query ? 'No hay coincidencias' : 'Tu próxima estrategia merece guardarse'}</h2>
+              <p>
+                {query
+                  ? 'Prueba otro nombre, naturaleza o movimiento.'
+                  : 'En el editor, pulsa «Guardar configuración». También puedes guardar un Pokémon seleccionado o importar un archivo Showdown.'}
+              </p>
+            </div>
+          )}
         </div>
       )}
       {exporting && (

@@ -91,6 +91,8 @@ export default function Calculator({
     reflect: false,
     lightScreen: false,
     tailwind: false,
+    auroraVeil: false,
+    helpingHand: false,
     abilityOn: ['Intimidate', 'Intrepid Sword', 'Dauntless Shield', 'Slow Start'].includes(
       m.ability,
     ),
@@ -459,39 +461,60 @@ export default function Calculator({
             Espacio Raro
           </label>
           <div className="field-divider" />
-          {settings.sides.map((s, i) => (
-            <div className="side-options" key={i}>
-              <h4>Equipo {i + 1}</h4>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={s.reflect}
-                  onChange={(e) => updateSide(i, { reflect: e.target.checked })}
-                />
-                Reflejo
-              </label>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={s.lightScreen}
-                  onChange={(e) => updateSide(i, { lightScreen: e.target.checked })}
-                />
-                Pantalla de Luz
-              </label>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  disabled={era < 4}
-                  checked={s.tailwind}
-                  onChange={(e) => updateSide(i, { tailwind: e.target.checked })}
-                />
-                <Wind size={14} />
-                Viento Afín
-              </label>
-            </div>
-          ))}
+          <div className="team-effects-grid">
+            {settings.sides.map((s, i) => (
+              <fieldset className="side-options" key={i}>
+                <legend>Equipo {i + 1}</legend>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={s.reflect}
+                    onChange={(e) => updateSide(i, { reflect: e.target.checked })}
+                  />
+                  Reflejo
+                </label>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={s.lightScreen}
+                    onChange={(e) => updateSide(i, { lightScreen: e.target.checked })}
+                  />
+                  Pantalla de Luz
+                </label>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    disabled={era < 4}
+                    checked={s.tailwind}
+                    onChange={(e) => updateSide(i, { tailwind: e.target.checked })}
+                  />
+                  <Wind size={14} />
+                  Viento Afín
+                </label>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    disabled={era < 7}
+                    checked={!!s.auroraVeil}
+                    onChange={(e) => updateSide(i, { auroraVeil: e.target.checked })}
+                  />
+                  Velo Aurora
+                </label>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    disabled={era < 3 || !settings.doubles}
+                    checked={settings.doubles && !!s.helpingHand}
+                    onChange={(e) => updateSide(i, { helpingHand: e.target.checked })}
+                  />
+                  Refuerzo
+                </label>
+              </fieldset>
+            ))}
+          </div>
           <p className="small muted">
-            Los cambios del campo se aplican a los cálculos en ambas direcciones.
+            Los efectos se aplican a cada equipo en ambas direcciones. Refuerzo potencia al atacante
+            en dobles. Velo Aurora indica una pantalla ya activa.
           </p>
         </section>
         {fighter(1)}

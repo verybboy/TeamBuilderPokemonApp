@@ -7,6 +7,8 @@ export interface SideSettings {
   reflect: boolean;
   lightScreen: boolean;
   tailwind: boolean;
+  auroraVeil?: boolean;
+  helpingHand?: boolean;
   abilityOn: boolean;
   status: string;
   boosts: Spread;
@@ -23,6 +25,8 @@ export function fieldFor(settings: BattleSettings, reverse = false) {
     isReflect: settings.sides[i].reflect,
     isLightScreen: settings.sides[i].lightScreen,
     isTailwind: settings.sides[i].tailwind,
+    isAuroraVeil: !!settings.sides[i].auroraVeil,
+    isHelpingHand: settings.doubles && !!settings.sides[i].helpingHand,
   });
   return new Field({
     gameType: settings.doubles ? 'Doubles' : 'Singles',

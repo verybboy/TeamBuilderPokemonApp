@@ -4,6 +4,7 @@ import App from './App';
 import './styles.css';
 import './theme.css';
 import './moves.css';
+import './teams.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

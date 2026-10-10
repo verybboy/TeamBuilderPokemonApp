@@ -7,7 +7,7 @@ import { createMember, emptyTeams, type PokemonData, type Member, type Gen } fro
 import Calculator from './Calculator';
 import { loadPokemon, loadItemSprite } from './api';
 import { Sprite } from './components';
-import { LIBRARY_KEY, addConfiguration } from './library';
+import { LIBRARY_KEY, TEAM_LIBRARY_KEY, addConfiguration, addTeamConfiguration } from './library';
 function fixture(name: string): PokemonData {
   const p = new Pokemon(9, name);
   return {
@@ -88,6 +88,263 @@ beforeEach(() => {
   });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+});
+describe('Biblioteca de equipos, limpieza y cobertura', () => {
+  function teamEntry(name = 'Arena') {
+    const team = emptyTeams()[0];
+    team.slots[0] = member('Garchomp');
+    team.slots[2] = member('Pikachu');
+    return addTeamConfiguration([], team, 9, name).entry;
+  }
+  function storeTeams(entries: ReturnType<typeof teamEntry>[]) {
+    localStorage.setItem(TEAM_LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
+  }
+  function openTeams() {
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+  }
+  it('importa un .txt como equipo en Mis equipos sin modificar el constructor ni descargar', async () => {
+    render(<App />);
+    openTeams();
+    const file = new File([''], 'Sol.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'text', {
+      value: async () =>
+        'Torkoal\nAbility: Drought\nEVs: 32 HP / 32 SpA / 2 SpD\nQuiet Nature\n- Heat Wave\n- Protect',
+    });
+    fireEvent.change(screen.getByLabelText('Importar archivo de configuración'), {
+      target: { files: [file] },
+    });
+    await waitFor(() => expect(localStorage.getItem(TEAM_LIBRARY_KEY)).not.toBeNull());
+    const entries = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('Sol');
+    expect(entries[0].gen).toBe(0);
+    expect(entries[0].team.slots).toHaveLength(6);
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+  });
+  it('conserva el guardado anterior si el almacenamiento falla al guardar un equipo', () => {
+    saved();
+    storeTeams([teamEntry()]);
+    const original = localStorage.getItem(TEAM_LIBRARY_KEY);
+    render(<App />);
+    const actual = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === TEAM_LIBRARY_KEY) throw new DOMException('Quota', 'QuotaExceededError');
+      return actual.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo' }));
+    expect(screen.getByRole('alert').textContent).toContain('No se pudo guardar');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(original);
+    expect(screen.getByRole('dialog')).toBeDefined();
+  });
+  it('no sobrescribe una biblioteca de equipos corrupta al abrir o cambiar de pestaña', () => {
+    localStorage.setItem(TEAM_LIBRARY_KEY, 'corrupt');
+    render(<App />);
+    openTeams();
+    expect(screen.getByRole('alert').textContent).toContain('No se pudo restaurar la biblioteca');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe('corrupt');
+  });
+  it('guarda una copia con nombre y seis plazas sin descargar archivos', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del equipo guardado' }), {
+      target: { value: 'Mi arena' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo' }));
+    const entry = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0];
+    expect(entry.name).toBe('Mi arena');
+    expect(entry.gen).toBe(9);
+    expect(entry.team.slots).toHaveLength(6);
+    expect(entry.team.slots[0].data.name).toBe('Garchomp');
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre equipo 1' }), {
+      target: { value: 'Nombre nuevo' },
+    });
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0].name).toBe('Mi arena');
+    openTeams();
+    expect(
+      screen.getByRole('table', { name: 'Equipos guardados por nombre' }).textContent,
+    ).toContain('Mi arena');
+    expect(screen.getByRole('tab', { name: /Mis equipos/ }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+  });
+  it('exige dos confirmaciones y conserva el otro equipo, su selección y la biblioteca', () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2/ }));
+    const original = localStorage.getItem(KEY),
+      library = localStorage.getItem(TEAM_LIBRARY_KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la limpieza' }));
+    expect(
+      (screen.getByRole('button', { name: 'Confirmar y limpiar equipo' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la limpieza' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Escribe LIMPIAR para confirmar' }), {
+      target: { value: 'LIMPIAR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar y limpiar equipo' }));
+    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    expect(stored.teams[0].slots).toEqual(Array(6).fill(null));
+    expect(stored.teams[1].slots[0].data.name).toBe('Torkoal');
+    expect(stored.teams[0].name).toBe(JSON.parse(original!).teams[0].name);
+    expect(
+      screen
+        .getByRole('button', { name: /Seleccionar plaza 1 de equipo 2/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(library);
+  });
+  it('ordena Pokémon por especie y equipos por su nombre, incluso tras renombrar', () => {
+    const p = addConfiguration([], member('Pikachu'), 9, 'AAA');
+    const g = addConfiguration(p.entries, member('Garchomp'), 9, 'ZZZ');
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: [p.entry, g.entry] }));
+    storeTeams([teamEntry('Zeta'), teamEntry('Ámbar')]);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Garchomp');
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Ámbar');
+    fireEvent.click(screen.getByRole('button', { name: 'Renombrar equipo Zeta' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del equipo guardado' }), {
+      target: { value: 'Alba' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Alba');
+    const entries = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries;
+    expect(entries.find((e: { name: string }) => e.name === 'Alba').team.name).toBe('Alba');
+  });
+  it('exporta equipos con copia o descarga voluntaria y permite eliminarlos', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar equipo Arena' }));
+    expect(
+      (screen.getByRole('textbox', { name: 'Texto de Showdown' }) as HTMLTextAreaElement).value,
+    ).toContain('Garchomp');
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar equipo' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar .txt' }));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo Arena' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo Arena' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo guardado' }));
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].data.name).toBe('Garchomp');
+  });
+  it('carga el equipo completo en el destino elegido después de confirmar el reemplazo', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Equipo de destino' }), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Arena en/ }));
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].slots[0].data.name).toBe('Torkoal');
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar equipo' }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].name).toBe('Arena'));
+    const team = JSON.parse(localStorage.getItem(KEY)!).teams[1];
+    expect(team.slots[0].data.name).toBe('Garchomp');
+    expect(team.slots[1]).toBeNull();
+    expect(team.slots[2].data.name).toBe('Pikachu');
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].name).not.toBe('Arena');
+  });
+  it('valida todos los miembros antes de reemplazar y conserva los equipos ante un error', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    const original = localStorage.getItem(KEY);
+    vi.mocked(loadPokemon).mockImplementation(async (name) => {
+      if (name === 'Pikachu') throw new Error('Sin conexión');
+      return fixture(name);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Arena en/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar equipo' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Sin conexión'));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(1);
+  });
+  it('convierte equipos guardados de generación 9 a Champions antes de cargar', async () => {
+    const team = emptyTeams()[0];
+    team.slots[3] = member('Torkoal');
+    team.slots[3].evs = { hp: 252, atk: 0, def: 0, spa: 252, spd: 4, spe: 0 };
+    storeTeams(addTeamConfiguration([], team, 9, 'Sol').entries);
+    render(<App />);
+    openTeams();
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Sol en/ }));
+    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull());
+    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    expect(stored.gen).toBe(0);
+    expect(stored.teams[0].slots[3].evs).toEqual({
+      hp: 32,
+      atk: 0,
+      def: 0,
+      spa: 32,
+      spd: 1,
+      spe: 0,
+    });
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0].gen).toBe(9);
+  });
+  it('muestra multiplicadores y totales bajo cada equipo', () => {
+    saved();
+    render(<App />);
+    const table = screen.getAllByRole('table')[0];
+    const row = within(table)
+      .getAllByRole('row')
+      .find((r) => within(r).queryByRole('rowheader', { name: 'Hielo' }))!;
+    expect(within(row).getAllByRole('cell')[0].textContent).toBe('4×');
+    expect(
+      within(row)
+        .getAllByRole('cell')
+        .slice(-2)
+        .map((cell) => cell.textContent),
+    ).toEqual(['1', '0']);
+    expect(screen.getAllByRole('table')).toHaveLength(2);
+  });
+  it('agrupa efectos por equipo lado a lado, aplica Velo y Refuerzo, y desactiva Refuerzo en singles', () => {
+    render(
+      <Calculator members={[member('Garchomp'), member('Torkoal')]} gen={9} onClose={() => {}} />,
+    );
+    const left = screen.getByRole('group', { name: 'Equipo 1' }),
+      right = screen.getByRole('group', { name: 'Equipo 2' });
+    expect(left.parentElement?.className).toBe('team-effects-grid');
+    expect(left.parentElement).toBe(right.parentElement);
+    expect(within(left).getAllByRole('checkbox')).toHaveLength(5);
+    const move = screen.getByRole('button', { name: /^Earthquake/ });
+    const base = move.querySelector('.move-damage-value')!.textContent;
+    fireEvent.click(within(right).getByRole('checkbox', { name: 'Velo Aurora' }));
+    expect(move.querySelector('.move-damage-value')!.textContent).not.toBe(base);
+    fireEvent.click(within(right).getByRole('checkbox', { name: 'Velo Aurora' }));
+    fireEvent.click(within(left).getByRole('checkbox', { name: 'Refuerzo' }));
+    expect(move.querySelector('.move-damage-value')!.textContent).not.toBe(base);
+    fireEvent.click(screen.getByRole('button', { name: 'Singles' }));
+    expect(
+      (within(left).getByRole('checkbox', { name: 'Refuerzo' }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (within(left).getByRole('checkbox', { name: 'Refuerzo' }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
 });
 describe('Champions, naturalezas, tema y configuraciones', () => {
   it('activa Champions y limita el editor a 32 SP / 66 con nivel e IVs fijos', async () => {
