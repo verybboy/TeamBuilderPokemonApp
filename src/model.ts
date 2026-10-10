@@ -1,5 +1,10 @@
 import { Generations, Pokemon, toID } from '@smogon/calc';
-export type Gen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+// Smogon's generation 0 selects the native Champions engine.
+export type Gen = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export const mechanicsLabel = (gen: Gen) => (gen === 0 ? 'Pokémon Champions' : `Generación ${gen}`);
+export const apiGeneration = (gen: Gen): Exclude<Gen, 0> => (gen === 0 ? 9 : gen);
+export const trainingLimits = (gen: Gen) =>
+  gen === 0 ? { perStat: 32, total: 66, label: 'SP' } : { perStat: 252, total: 510, label: 'EVs' };
 export const stats = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
 export type Stat = (typeof stats)[number];
 export type Spread = Record<Stat, number>;
@@ -14,6 +19,30 @@ export const statLabels: Record<Stat, string> = {
 export const spread = (n: number): Spread => ({ hp: n, atk: n, def: n, spa: n, spd: n, spe: n });
 export const generations = Generations;
 export const id = (s: string) => String(toID(s));
+export function natureEffect(nature: string) {
+  const value = generations.get(9).natures.get(toID(nature));
+  return value && value.plus !== value.minus
+    ? { plus: value.plus, minus: value.minus }
+    : { plus: undefined, minus: undefined };
+}
+export function natureLabel(nature: string) {
+  const { plus, minus } = natureEffect(nature);
+  return plus && minus
+    ? `${nature} (↑ ${statLabels[plus]} / ↓ ${statLabels[minus]})`
+    : `${nature} (neutra)`;
+}
+export function convertMemberProfile(member: Member, from: Gen, to: Gen): Member {
+  const converted = structuredClone(member);
+  if (from !== 0 && to === 0) {
+    for (const stat of stats) converted.evs[stat] = Math.floor((converted.evs[stat] + 4) / 8);
+    converted.level = 50;
+    converted.ivs = spread(31);
+  }
+  if (from === 0 && to !== 0)
+    for (const stat of stats)
+      converted.evs[stat] = converted.evs[stat] === 0 ? 0 : converted.evs[stat] * 8 - 4;
+  return converted;
+}
 export interface PokemonData {
   apiName: string;
   name: string;
@@ -71,10 +100,10 @@ export function calcPokemon(m: Member, gen: Gen, boosts: Partial<Spread> = {}, s
   const p = new Pokemon(g, m.data.name, {
     level: m.level,
     ivs: m.ivs,
-    evs: m.evs,
-    nature: gen >= 3 ? m.nature : 'Hardy',
-    ability: gen >= 3 ? m.ability : '',
-    item: gen >= 2 ? m.item : '',
+    evs: gen !== 0 && gen < 3 ? spread(252) : m.evs,
+    nature: apiGeneration(gen) >= 3 ? m.nature : 'Hardy',
+    ability: apiGeneration(gen) >= 3 ? m.ability : '',
+    item: apiGeneration(gen) >= 2 ? m.item : '',
     gender: m.gender,
     boosts,
     status: status as Pokemon['status'],
@@ -95,22 +124,28 @@ export function validateMember(m: Member, gen: Gen) {
   )
     throw new Error('Datos del Pokémon inválidos.');
   const g = generations.get(gen);
+  const limits = trainingLimits(gen);
   if (!g.species.get(toID(m.data.name)))
     throw new Error('Especie no disponible en esta generación.');
   if (!Number.isInteger(m.level) || m.level < 1 || m.level > 100)
     throw new Error('El nivel debe estar entre 1 y 100.');
+  if (gen === 0 && (m.level !== 50 || stats.some((stat) => m.ivs[stat] !== 31)))
+    throw new Error('Champions usa nivel 50 e IVs perfectos (31).');
   for (const s of stats) {
     if (!Number.isInteger(m.ivs[s]) || m.ivs[s] < 0 || m.ivs[s] > 31)
       throw new Error('Los IVs deben estar entre 0 y 31.');
-    if (!Number.isInteger(m.evs[s]) || m.evs[s] < 0 || m.evs[s] > 252)
-      throw new Error('Los EVs deben estar entre 0 y 252.');
+    if (!Number.isInteger(m.evs[s]) || m.evs[s] < 0 || m.evs[s] > limits.perStat)
+      throw new Error(`Los ${limits.label} deben estar entre 0 y ${limits.perStat}.`);
   }
-  if (stats.reduce((t, s) => t + m.evs[s], 0) > 510)
-    throw new Error('El total de EVs no puede superar 510.');
+  if (stats.reduce((t, s) => t + m.evs[s], 0) > limits.total)
+    throw new Error(`El total de ${limits.label} no puede superar ${limits.total}.`);
   if (!Number.isFinite(m.hpPercent) || m.hpPercent < 0 || m.hpPercent > 100)
     throw new Error('Los PS deben estar entre 0 y 100 %.');
   if (!m.data.genders.includes(m.gender)) throw new Error('Sexo incompatible con la especie.');
-  if (gen >= 3 && (!m.data.abilities.includes(m.ability) || !g.abilities.get(toID(m.ability))))
+  if (
+    apiGeneration(gen) >= 3 &&
+    (!m.data.abilities.includes(m.ability) || !g.abilities.get(toID(m.ability)))
+  )
     throw new Error('Habilidad no válida para esta especie y generación.');
   if (!g.natures.get(toID(m.nature))) throw new Error('Naturaleza desconocida.');
   if (m.item && !g.items.get(toID(m.item)))
@@ -130,7 +165,7 @@ export function restoreTeams(raw: string | null): { teams: Team[]; gen: Gen } | 
       v.version !== 1 ||
       !Array.isArray(v.teams) ||
       v.teams.length !== 2 ||
-      ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(v.gen)
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(v.gen)
     )
       return null;
     for (const t of v.teams) {

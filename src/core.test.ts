@@ -13,7 +13,7 @@ import {
 } from './model';
 import { importShowdown, exportShowdown } from './showdown';
 import { attackOrder, damageFor, type BattleSettings } from './battle';
-import { loadPokemon, request } from './api';
+import { loadPokemon, loadItemSprite, request } from './api';
 function data(name: string): PokemonData {
   const p = new Pokemon(9, name);
   return {
@@ -291,6 +291,25 @@ describe('Orden de ataque', () => {
 });
 describe('PokéAPI', () => {
   afterEach(() => vi.unstubAllGlobals());
+  it('resuelve imágenes de objetos, alias y cristales Z y reutiliza la caché', async () => {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => ({
+        sprites: { default: url.endsWith('booster-energy') ? null : `${url}/sprite.png` },
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await loadItemSprite('')).toBeNull();
+    expect(await loadItemSprite('Choice Scarf')).toContain('/item/choice-scarf/');
+    expect(await loadItemSprite('Black Glasses')).toContain('/item/black-glasses/');
+    expect(await loadItemSprite('DeepSeaTooth')).toContain('/item/deep-sea-tooth/');
+    expect(await loadItemSprite('Electrium Z')).toContain('/item/electrium-z--held/');
+    expect(await loadItemSprite('Booster Energy')).toContain(
+      '/sprites/items/gen9/booster-energy.png',
+    );
+    await loadItemSprite('Choice Scarf');
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
   it('obtiene la especie, limita movimientos por generación y respeta sexo', async () => {
     const fetchMock = vi.fn(async (url: string) => ({
       ok: true,

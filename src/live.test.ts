@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { loadPokemon } from './api';
+import { loadPokemon, loadItemSprite } from './api';
 import { createMember, validateMember } from './model';
 // Opt-in integration check: makes real, cached PokéAPI requests.
 test.skipIf(process.env.RUN_LIVE_API !== '1')(
@@ -38,6 +38,24 @@ test.skipIf(process.env.RUN_LIVE_API !== '1')(
     expect(currentGengar.abilities).toContain('Cursed Body');
     const oldClefairy = await loadPokemon('Clefairy', 3);
     expect(oldClefairy.types).toEqual(['normal']);
+    const championsData = await loadPokemon('Torkoal', 0);
+    const champions = createMember(championsData);
+    champions.moves = ['Protect', 'Heat Wave', 'Eruption', 'Weather Ball'];
+    champions.evs = { hp: 32, atk: 0, def: 0, spa: 32, spd: 2, spe: 0 };
+    validateMember(champions, 0);
+    for (const item of [
+      'Choice Scarf',
+      'Charcoal',
+      'Booster Energy',
+      'DeepSeaTooth',
+      'Electrium Z',
+    ]) {
+      const sprite = await loadItemSprite(item);
+      expect(sprite).toMatch(/^https:\/\//);
+      const response = await fetch(sprite!);
+      expect(response.ok).toBe(true);
+      expect(response.headers.get('content-type')).toContain('image/');
+    }
   },
   120000,
 );

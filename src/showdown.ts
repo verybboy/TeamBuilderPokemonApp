@@ -5,6 +5,8 @@ import {
   spread,
   stats,
   validateMember,
+  apiGeneration,
+  trainingLimits,
   type Gen,
   type Member,
   type PokemonData,
@@ -120,7 +122,7 @@ export async function importShowdown(
             member.shiny = value === 'Yes';
             break;
           case 'EVs':
-            member.evs = parseSpread(value, 252);
+            member.evs = parseSpread(value, trainingLimits(gen).perStat);
             break;
           case 'IVs':
             member.ivs = parseSpread(value, 31);
@@ -150,12 +152,12 @@ export function exportShowdown(members: (Member | null)[], gen: Gen): string {
       const lines = [
         `${m.nickname ? `${m.nickname} (${m.data.name})` : m.data.name}${m.gender === 'N' ? '' : ` (${m.gender})`}${m.item ? ` @ ${m.item}` : ''}`,
       ];
-      if (gen >= 3) lines.push(`Ability: ${m.ability}`);
+      if (apiGeneration(gen) >= 3) lines.push(`Ability: ${m.ability}`);
       lines.push(`Level: ${m.level}`);
       if (m.shiny) lines.push('Shiny: Yes');
       const evs = stats.filter((s) => m.evs[s] !== 0).map((s) => `${m.evs[s]} ${labels[s]}`);
       if (evs.length) lines.push(`EVs: ${evs.join(' / ')}`);
-      if (gen >= 3) lines.push(`${m.nature} Nature`);
+      if (apiGeneration(gen) >= 3) lines.push(`${m.nature} Nature`);
       const ivs = stats.filter((s) => m.ivs[s] !== 31).map((s) => `${m.ivs[s]} ${labels[s]}`);
       if (ivs.length) lines.push(`IVs: ${ivs.join(' / ')}`);
       lines.push(...m.moves.filter(Boolean).map((move) => `- ${move}`));
