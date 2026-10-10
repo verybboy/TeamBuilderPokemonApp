@@ -111,6 +111,48 @@ export function calcPokemon(m: Member, gen: Gen, boosts: Partial<Spread> = {}, s
   p.originalCurHP = Math.round((p.maxHP() * m.hpPercent) / 100);
   return p;
 }
+export function megaForm(member: Member, gen: Gen): string | null {
+  const g = generations.get(gen);
+  const forms = g.items.get(toID(member.item))?.megaStone as
+    Readonly<Record<string, string>> | undefined;
+  const form = forms?.[member.data.name];
+  return form && g.species.get(toID(form)) ? form : null;
+}
+export function withTraining(member: Member, gen: Gen, stat: Stat, value: number): Member {
+  if (apiGeneration(gen) < 3)
+    throw new Error('Este perfil usa entrenamiento máximo, sin EVs editables.');
+  const limits = trainingLimits(gen);
+  if (!Number.isInteger(value) || value < 0 || value > limits.perStat)
+    throw new Error(`${limits.label}: introduce un entero de 0 a ${limits.perStat}.`);
+  const evs = { ...member.evs, [stat]: value };
+  if (stats.reduce((sum, stat) => sum + evs[stat], 0) > limits.total)
+    throw new Error(
+      `El reparto de ${limits.label} no puede superar ${limits.total}. Reduce otra estadística primero.`,
+    );
+  return { ...member, evs };
+}
+export function megaEvolve(
+  member: Member,
+  gen: Gen,
+  images?: Pick<PokemonData, 'sprite' | 'shinySprite'>,
+): Member {
+  const name = megaForm(member, gen);
+  if (!name) throw new Error('La megapiedra no es compatible con este Pokémon y perfil.');
+  const species = generations.get(gen).species.get(toID(name))!;
+  const mega = structuredClone(member);
+  mega.data = {
+    ...mega.data,
+    name,
+    apiName: name.toLowerCase(),
+    types: species.types.map((type) => type.toLowerCase()),
+    baseStats: { ...species.baseStats },
+    abilities: species.abilities ? [species.abilities[0]] : [],
+    sprite: images?.sprite || '',
+    shinySprite: images?.shinySprite || images?.sprite || '',
+  };
+  mega.ability = mega.data.abilities[0] || '';
+  return mega;
+}
 export function validateMember(m: Member, gen: Gen) {
   if (
     typeof m.nickname !== 'string' ||

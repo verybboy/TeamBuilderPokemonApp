@@ -30,6 +30,9 @@ import {
 } from './model';
 import { loadPokemon, loadItemSprite, names } from './api';
 import { exportShowdown, importShowdown } from './showdown';
+import { downloadText } from './library';
+import MovePicker from './MovePicker';
+import { typeLabels } from './moves';
 export const errorText = (e: unknown) =>
   e instanceof Error ? e.message : 'Ha ocurrido un error. Inténtalo de nuevo.';
 export function Modal({
@@ -119,7 +122,15 @@ function ItemSprite({ item }: { item: string }) {
     </span>
   );
 }
-export function Sprite({ member, large = false }: { member: Member; large?: boolean }) {
+export function Sprite({
+  member,
+  large = false,
+  showItem = true,
+}: {
+  member: Member;
+  large?: boolean;
+  showItem?: boolean;
+}) {
   const [broken, setBroken] = useState(false);
   const src = member.shiny ? member.data.shinySprite : member.data.sprite;
   useEffect(() => setBroken(false), [src]);
@@ -136,30 +147,10 @@ export function Sprite({ member, large = false }: { member: Member; large?: bool
         />
       )}
       {member.shiny && <Sparkles size={16} className="shiny-star" aria-label="Variocolor" />}
-      {member.item && <ItemSprite key={member.item} item={member.item} />}
+      {showItem && member.item && <ItemSprite key={member.item} item={member.item} />}
     </div>
   );
 }
-const typeLabels: Record<string, string> = {
-  normal: 'Normal',
-  fire: 'Fuego',
-  water: 'Agua',
-  electric: 'Eléctrico',
-  grass: 'Planta',
-  ice: 'Hielo',
-  fighting: 'Lucha',
-  poison: 'Veneno',
-  ground: 'Tierra',
-  flying: 'Volador',
-  psychic: 'Psíquico',
-  bug: 'Bicho',
-  rock: 'Roca',
-  ghost: 'Fantasma',
-  dragon: 'Dragón',
-  dark: 'Siniestro',
-  steel: 'Acero',
-  fairy: 'Hada',
-};
 export function Types({ types }: { types: string[] }) {
   return (
     <span className="types">
@@ -392,24 +383,24 @@ export function Editor({
               <h4>
                 Movimientos <span className="muted">Solo los que puede aprender</span>
               </h4>
-              <div className="form-grid">
+              <p className="small muted move-pp-note">
+                {gen === 0 ? 'PP disponibles en Champions.' : 'PP máximos con 3 PP Más.'} Acierto y
+                potencia base; los efectos pueden modificarlos.
+              </p>
+              <div className="editor-moves">
                 {draft.moves.map((move, i) => (
-                  <label key={i}>
-                    Movimiento {i + 1}
-                    <select
-                      value={move}
-                      onChange={(e) => {
-                        const moves = [...draft.moves];
-                        moves[i] = e.target.value;
-                        update('moves', moves);
-                      }}
-                    >
-                      <option value="">Sin movimiento</option>
-                      {draft.data.moves.map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <MovePicker
+                    key={`${draft.data.name}-${i}`}
+                    label={`Movimiento ${i + 1}`}
+                    value={move}
+                    gen={gen}
+                    names={draft.data.moves}
+                    onChange={(name) => {
+                      const moves = [...draft.moves];
+                      moves[i] = name;
+                      update('moves', moves);
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -560,6 +551,54 @@ export function Editor({
     </Modal>
   );
 }
+export function ShowdownExport({
+  text,
+  filename,
+  copyLabel,
+}: {
+  text: string;
+  filename: string;
+  copyLabel: string;
+}) {
+  const [copied, setCopied] = useState(false),
+    [error, setError] = useState('');
+  async function copy() {
+    setError('');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      setError('No se pudo acceder al portapapeles. Selecciona el texto y cópialo manualmente.');
+    }
+  }
+  return (
+    <>
+      <label className="transfer-label">
+        Formato Pokémon Showdown
+        <textarea aria-label="Texto de Showdown" className="showdown-text" readOnly value={text} />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <footer className="modal-footer">
+        <button
+          className="button secondary"
+          disabled={!text}
+          onClick={() => downloadText(text, filename)}
+        >
+          <Download size={16} />
+          Descargar .txt
+        </button>
+        <button className="button primary" disabled={!text} onClick={() => void copy()}>
+          <Clipboard size={16} />
+          {copied ? 'Copiado' : copyLabel}
+        </button>
+      </footer>
+    </>
+  );
+}
 export function Transfer({
   mode,
   teams,
@@ -586,8 +625,7 @@ export function Transfer({
     [text, setText] = useState(''),
     [replace, setReplace] = useState(false),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
-    [copied, setCopied] = useState(false);
+    [busy, setBusy] = useState(false);
   const output = exportShowdown(teams[team].slots, gen);
   async function apply() {
     setBusy(true);
@@ -606,22 +644,6 @@ export function Transfer({
       if (active.current) setBusy(false);
     }
   }
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(output);
-      setCopied(true);
-    } catch {
-      setError('No se pudo acceder al portapapeles. Selecciona el texto y cópialo manualmente.');
-    }
-  }
-  function download() {
-    const url = URL.createObjectURL(new Blob([output], { type: 'text/plain;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `equipo-${team + 1}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
   return (
     <Modal
       title={mode === 'import' ? 'Importar desde Showdown' : 'Exportar a Showdown'}
@@ -635,7 +657,6 @@ export function Transfer({
           disabled={busy}
           onChange={(e) => {
             setTeam(Number(e.target.value));
-            setCopied(false);
           }}
         >
           {teams.map((t, i) => (
@@ -645,21 +666,27 @@ export function Transfer({
           ))}
         </select>
       </label>
-      <label className="transfer-label">
-        Formato Import / Export
-        <textarea
-          aria-label="Texto de Showdown"
-          className="showdown-text"
-          readOnly={mode === 'export'}
-          value={mode === 'export' ? output : text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={
-            'Torkoal @ Charcoal\nAbility: Drought\nLevel: 50\nQuiet Nature\n- Protect\n- Heat Wave\n- Eruption\n- Weather Ball'
-          }
+      {mode === 'export' ? (
+        <ShowdownExport
+          key={team}
+          text={output}
+          filename={`equipo-${team + 1}.txt`}
+          copyLabel="Copiar equipo"
         />
-      </label>
-      {mode === 'import' && (
+      ) : (
         <>
+          <label className="transfer-label">
+            Formato Import / Export
+            <textarea
+              aria-label="Texto de Showdown"
+              className="showdown-text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={
+                'Torkoal @ Charcoal\nAbility: Drought\nLevel: 50\nQuiet Nature\n- Protect\n- Heat Wave\n- Eruption\n- Weather Ball'
+              }
+            />
+          </label>
           <label className="check-line">
             <input
               disabled={busy}
@@ -673,36 +700,23 @@ export function Transfer({
             Hasta seis Pokémon, separados por una línea en blanco. Se validan antes de guardar. Los
             campos no compatibles generan un error.
           </p>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <footer className="modal-footer">
+            <button
+              className="button primary"
+              onClick={() => void apply()}
+              disabled={busy || !text.trim()}
+            >
+              {busy && <LoaderCircle size={16} className="spin" />}
+              {busy ? 'Validando…' : 'Importar Pokémon'}
+            </button>
+          </footer>
         </>
       )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <footer className="modal-footer">
-        {mode === 'import' ? (
-          <button
-            className="button primary"
-            onClick={() => void apply()}
-            disabled={busy || !text.trim()}
-          >
-            {busy && <LoaderCircle size={16} className="spin" />}
-            {busy ? 'Validando…' : 'Importar Pokémon'}
-          </button>
-        ) : (
-          <>
-            <button className="button secondary" disabled={!output} onClick={download}>
-              <Download size={16} />
-              Descargar .txt
-            </button>
-            <button className="button primary" disabled={!output} onClick={() => void copy()}>
-              <Clipboard size={16} />
-              {copied ? 'Copiado' : 'Copiar equipo'}
-            </button>
-          </>
-        )}
-      </footer>
     </Modal>
   );
 }

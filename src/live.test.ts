@@ -43,6 +43,25 @@ test.skipIf(process.env.RUN_LIVE_API !== '1')(
     champions.moves = ['Protect', 'Heat Wave', 'Eruption', 'Weather Ball'];
     champions.evs = { hp: 32, atk: 0, def: 0, spa: 32, spd: 2, spe: 0 };
     validateMember(champions, 0);
+    for (const [name, ability, moves] of [
+      ['Venusaur', 'Chlorophyll', ['Sleep Powder', 'Sludge Bomb', 'Giga Drain', 'Protect']],
+      ['Sylveon', 'Pixilate', ['Moonblast', 'Hyper Voice', 'Quick Attack', 'Protect']],
+    ] as const) {
+      const data = await loadPokemon(name, 0);
+      const m = createMember(data);
+      m.ability = ability;
+      m.moves = [...moves];
+      m.evs = { hp: 32, atk: 0, def: 20, spa: 0, spd: 13, spe: 0 };
+      validateMember(m, 0);
+    }
+    for (const form of ['Charizard-Mega-X', 'Charizard-Mega-Y']) {
+      const data = await loadPokemon(form, 9);
+      expect(data.name).toBe(form);
+      expect(data.sprite).toMatch(/^https:\/\//);
+      const response = await fetch(data.sprite);
+      expect(response.ok).toBe(true);
+      expect(response.headers.get('content-type')).toContain('image/');
+    }
     for (const item of [
       'Choice Scarf',
       'Charcoal',

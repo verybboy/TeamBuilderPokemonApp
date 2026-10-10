@@ -37,12 +37,21 @@ import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
 import Library from './ConfigurationLibrary';
+import DefensiveCoverage from './DefensiveCoverage';
+import { SaveTeamDialog, ClearTeamDialog } from './TeamDialogs';
+import { moveInfo } from './moves';
+import { MoveType } from './MovePicker';
 import {
   LIBRARY_KEY,
   restoreLibrary,
   addConfiguration,
   persistLibrary,
   type SavedConfiguration,
+  TEAM_LIBRARY_KEY,
+  restoreTeamLibrary,
+  addTeamConfiguration,
+  persistTeamLibrary,
+  type SavedTeamConfiguration,
 } from './library';
 const STORAGE = 'pokemon-team-lab:v1';
 type Slot = { team: number; slot: number };
@@ -72,14 +81,25 @@ function initialTheme(): 'light' | 'dark' {
   } catch {}
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
+function initialTeamLibrary() {
+  try {
+    return restoreTeamLibrary(localStorage.getItem(TEAM_LIBRARY_KEY));
+  } catch {
+    return { entries: [], invalid: false };
+  }
+}
 export default function App() {
   const [initial] = useState(initialState),
     [libraryInitial] = useState(initialLibrary),
     [configurations, setConfigurations] = useState(libraryInitial.entries),
+    [teamLibraryInitial] = useState(initialTeamLibrary),
+    [savedTeams, setSavedTeams] = useState(teamLibraryInitial.entries),
+    [savingTeam, setSavingTeam] = useState<number | null>(null),
+    [clearingTeam, setClearingTeam] = useState<number | null>(null),
     [view, setView] = useState<'teams' | 'library'>('teams'),
     [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
-    [gen, setGen] = useState<Gen>(initial.saved?.gen || 9),
+    [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 0),
     [selected, setSelected] = useState<Slot[]>([]),
     [editor, setEditor] = useState<Slot | null>(null),
     [transfer, setTransfer] = useState<{ mode: 'import' | 'export'; team: number } | null>(null),
@@ -139,6 +159,61 @@ export default function App() {
     }
     setConfigurations(result.entries);
     setMessage(`${result.entry.name} guardada en tu biblioteca.`);
+  }
+  function updateTeamLibrary(entries: SavedTeamConfiguration[]) {
+    try {
+      persistTeamLibrary(entries);
+    } catch {
+      throw new Error('No se pudo guardar la biblioteca de equipos en este navegador.');
+    }
+    setSavedTeams(entries);
+  }
+  function saveTeam(team: Team, name: string) {
+    const result = addTeamConfiguration(savedTeams, team, gen, name);
+    updateTeamLibrary(result.entries);
+    setMessage(`${result.entry.name} guardado en Mis equipos.`);
+  }
+  async function importTeamConfiguration(text: string, name: string) {
+    setBusy(true);
+    try {
+      const members = await importShowdown(text, gen);
+      saveTeam({ name, slots: [...members, ...Array(6 - members.length).fill(null)] }, name);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function loadTeamConfiguration(entry: SavedTeamConfiguration, destination: number) {
+    setBusy(true);
+    try {
+      const snapshot = structuredClone(entry.team);
+      for (let i = 0; i < snapshot.slots.length; i++) {
+        if (!snapshot.slots[i]) continue;
+        const member = convertMemberProfile(snapshot.slots[i]!, entry.gen, gen);
+        member.data = await loadPokemon(member.data.name, gen);
+        validateMember(member, gen);
+        snapshot.slots[i] = member;
+      }
+      const next = structuredClone(teams);
+      next[destination] = snapshot;
+      changeTeams(next);
+      setSelected((selected) => selected.filter((slot) => slot.team !== destination));
+      setMessage(`${entry.name} cargado en el equipo ${destination + 1}.`);
+    } catch (e) {
+      throw new Error(`No se ha cargado el equipo: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function renameTeamConfiguration(entry: SavedTeamConfiguration, name: string) {
+    updateTeamLibrary(
+      savedTeams.map((value) =>
+        value.id === entry.id ? { ...value, name, team: { ...value.team, name } } : value,
+      ),
+    );
+  }
+  function deleteTeamConfiguration(entry: SavedTeamConfiguration) {
+    updateTeamLibrary(savedTeams.filter((value) => value.id !== entry.id));
+    setMessage(`${entry.name} eliminado de Mis equipos.`);
   }
   async function addFromLibrary(entry: SavedConfiguration, team: number) {
     const free = teams[team].slots.findIndex((slot) => !slot);
@@ -256,14 +331,37 @@ export default function App() {
     setBusy(true);
     setMessage('');
     try {
-      const imported = await Promise.all(demo.map((text) => importShowdown(text, 9)));
+      const profile: Gen = gen === 0 ? 0 : 9;
+      const texts =
+        profile === 0
+          ? [
+              demo[0].replace(
+                /Amoonguss[\s\S]*$/,
+                'Venusaur @ Sitrus Berry\nAbility: Chlorophyll\nEVs: 252 HP / 156 Def / 100 SpD\nRelaxed Nature\n- Sleep Powder\n- Sludge Bomb\n- Giga Drain\n- Protect',
+              ),
+              demo[1].replace(
+                /Flutter Mane[\s\S]*$/,
+                'Sylveon @ Sitrus Berry\nAbility: Pixilate\nEVs: 4 HP / 252 SpA / 252 Spe\nTimid Nature\n- Moonblast\n- Hyper Voice\n- Quick Attack\n- Protect',
+              ),
+            ]
+          : demo;
+      const imported = await Promise.all(texts.map((text) => importShowdown(text, 9)));
+      if (profile === 0) {
+        for (const team of imported)
+          for (let i = 0; i < team.length; i++) {
+            const m = convertMemberProfile(team[i], 9, profile);
+            m.data = await loadPokemon(m.data.name, profile);
+            validateMember(m, profile);
+            team[i] = m;
+          }
+      }
       changeTeams(
         imported.map((members, i) => ({
           name: i === 0 ? 'Equipo Aurora' : 'Equipo Eclipse',
           slots: [...members, ...Array(6 - members.length).fill(null)],
         })),
       );
-      setGen(9);
+      setGen(profile);
       setSelected([]);
       setMessage(
         'Ejemplo cargado: sol frente a lluvia. Selecciona un Pokémon de cada equipo para comparar.',
@@ -329,14 +427,6 @@ export default function App() {
             <ArrowUpRight size={15} />
           </button>
         </nav>
-        <div className="sidebar-tip">
-          <span className="tip-icon">
-            <Sparkles size={19} />
-          </span>
-          <h3>Cada detalle cuenta.</h3>
-          <p>Un movimiento. Un objeto. Una ventaja para tu próximo combate.</p>
-          <div className="tip-line" />
-        </div>
         <div className="sidebar-bottom">
           <span className="local-dot" />
           <span>Local. Privado. Tu equipo.</span>
@@ -383,6 +473,12 @@ export default function App() {
               )}
               <Library
                 entries={configurations}
+                savedTeams={savedTeams}
+                teamsInvalid={teamLibraryInitial.invalid && savedTeams.length === 0}
+                onLoadTeam={loadTeamConfiguration}
+                onImportTeam={importTeamConfiguration}
+                onRenameTeam={renameTeamConfiguration}
+                onDeleteTeam={deleteTeamConfiguration}
                 teams={teams}
                 gen={gen}
                 busy={busy}
@@ -396,36 +492,6 @@ export default function App() {
             </>
           ) : (
             <>
-              <section className="page-intro">
-                <div>
-                  <p className="eyebrow">
-                    <span /> CONSTRUYE. COMPARA. COMPITE.
-                  </p>
-                  <h1>
-                    Tu estrategia empieza
-                    <br />
-                    con un <em>buen equipo.</em>
-                  </h1>
-                  <p className="intro-description">
-                    Prepara tus Pokémon, afina sus características y encuentra
-                    <br className="desktop-break" /> la ventaja en cada enfrentamiento.
-                  </p>
-                </div>
-                <div className="intro-counter">
-                  <div className="counter-orbit">
-                    <span className="orbit-dot" />
-                    <Swords size={33} strokeWidth={1.5} />
-                  </div>
-                  <p>
-                    <strong>{String(count).padStart(2, '0')}</strong>
-                    <span>
-                      / 12
-                      <br />
-                      POKÉMON
-                    </span>
-                  </p>
-                </div>
-              </section>
               <div className="workspace-toolbar">
                 <div className="workspace-tabs">
                   <span className="workspace-tab">
@@ -488,20 +554,40 @@ export default function App() {
                   <section className={`team-panel team-${t}`} key={t}>
                     <header className="team-header">
                       <div className="team-avatar">{t === 0 ? 'A' : 'E'}</div>
-                      <div>
+                      <div className="team-name-block">
                         <p className="eyebrow">EQUIPO {String(t + 1).padStart(2, '0')}</p>
-                        <input
-                          className="team-name"
-                          aria-label={`Nombre equipo ${t + 1}`}
-                          value={team.name}
-                          maxLength={40}
-                          disabled={busy}
-                          onChange={(e) => {
-                            const next = structuredClone(teams);
-                            next[t].name = e.target.value;
-                            changeTeams(next);
-                          }}
-                        />
+                        <div className="team-name-actions">
+                          <input
+                            className="team-name"
+                            aria-label={`Nombre equipo ${t + 1}`}
+                            value={team.name}
+                            maxLength={40}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const next = structuredClone(teams);
+                              next[t].name = e.target.value;
+                              changeTeams(next);
+                            }}
+                          />
+                          <button
+                            className="icon-button"
+                            disabled={busy || !team.slots.some(Boolean)}
+                            title="Guardar en Mis equipos"
+                            aria-label={`Guardar equipo ${t + 1}`}
+                            onClick={() => setSavingTeam(t)}
+                          >
+                            <Save size={17} />
+                          </button>
+                          <button
+                            className="icon-button team-clear"
+                            disabled={busy || !team.slots.some(Boolean)}
+                            title="Limpiar equipo entero"
+                            aria-label={`Limpiar equipo ${t + 1}`}
+                            onClick={() => setClearingTeam(t)}
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
                       </div>
                       <span className="team-count">
                         {team.slots.filter(Boolean).length}
@@ -524,17 +610,17 @@ export default function App() {
                           <article
                             key={i}
                             className={`pokemon-card ${m ? 'filled' : 'empty'} ${chosen ? 'selected' : ''}`}
+                            onClick={(e) => {
+                              if (!busy && !(e.target as Element).closest('button')) toggle(t, i);
+                            }}
                           >
-                            <label className="slot-check">
-                              <input
-                                type="checkbox"
-                                disabled={busy}
-                                checked={chosen}
-                                onChange={() => toggle(t, i)}
-                                aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
-                              />
-                              <span>{chosen ? <Check size={12} /> : null}</span>
-                            </label>
+                            <button
+                              className="card-select"
+                              disabled={busy}
+                              aria-pressed={chosen}
+                              onClick={() => toggle(t, i)}
+                              aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
+                            />
                             <span className="slot-number">{String(i + 1).padStart(2, '0')}</span>
                             {m ? (
                               <>
@@ -570,19 +656,14 @@ export default function App() {
                                   <div className="card-moves">
                                     {m.moves.map((move, n) => (
                                       <span className={!move ? 'unused' : ''} key={n}>
-                                        {move || '—'}
+                                        <span className="card-move-name">{move || '—'}</span>
+                                        {moveInfo(move, gen) && (
+                                          <MoveType type={moveInfo(move, gen)!.type} />
+                                        )}
                                       </span>
                                     ))}
                                   </div>
                                 </div>
-                                <button
-                                  className="card-edit icon-button"
-                                  disabled={busy}
-                                  aria-label={`Editar ${m.data.name}`}
-                                  onClick={() => setEditor({ team: t, slot: i })}
-                                >
-                                  <Pencil size={15} />
-                                </button>
                               </>
                             ) : (
                               <button
@@ -616,6 +697,7 @@ export default function App() {
                         Exportar equipo <ArrowUpRight size={14} />
                       </button>
                     </footer>
+                    <DefensiveCoverage team={team} gen={gen} />
                   </section>
                 ))}
               </div>
@@ -729,6 +811,26 @@ export default function App() {
         />
       )}{' '}
       {battle && <Calculator members={battle} gen={gen} onClose={() => setBattle(null)} />}{' '}
+      {savingTeam !== null && (
+        <SaveTeamDialog
+          team={teams[savingTeam]}
+          onSave={(name) => saveTeam(teams[savingTeam], name)}
+          onClose={() => setSavingTeam(null)}
+        />
+      )}
+      {clearingTeam !== null && (
+        <ClearTeamDialog
+          team={teams[clearingTeam]}
+          onClose={() => setClearingTeam(null)}
+          onClear={() => {
+            const next = structuredClone(teams);
+            next[clearingTeam].slots = Array(6).fill(null);
+            changeTeams(next);
+            setSelected((selected) => selected.filter((slot) => slot.team !== clearingTeam));
+            setMessage(`${teams[clearingTeam].name} limpiado.`);
+          }}
+        />
+      )}
       {deleteSlots && (
         <Modal title="Borrar Pokémon" onClose={() => setDeleteSlots(null)}>
           <p>

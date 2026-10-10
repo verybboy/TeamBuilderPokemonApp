@@ -3,10 +3,11 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { Pokemon } from '@smogon/calc';
 import App from './App';
-import { createMember, emptyTeams, type PokemonData, type Member } from './model';
+import { createMember, emptyTeams, type PokemonData, type Member, type Gen } from './model';
+import Calculator from './Calculator';
 import { loadPokemon, loadItemSprite } from './api';
 import { Sprite } from './components';
-import { LIBRARY_KEY, addConfiguration } from './library';
+import { LIBRARY_KEY, TEAM_LIBRARY_KEY, addConfiguration, addTeamConfiguration } from './library';
 function fixture(name: string): PokemonData {
   const p = new Pokemon(9, name);
   return {
@@ -27,8 +28,8 @@ function fixture(name: string): PokemonData {
         : name === 'Garchomp'
           ? ['Earthquake', 'Dragon Claw', 'Rock Slide', 'Protect']
           : ['Thunderbolt', 'Quick Attack', 'Protect', 'Thunder'],
-    sprite: 'https://example.com/sprite.png',
-    shinySprite: 'https://example.com/shiny.png',
+    sprite: `https://example.com/${name}.png`,
+    shinySprite: `https://example.com/${name}-shiny.png`,
     genders: ['M', 'F'],
   };
 }
@@ -44,6 +45,13 @@ const KEY = 'pokemon-team-lab:v1';
 function member(name: string): Member {
   const m = createMember(fixture(name));
   m.moves = [...m.data.moves];
+  return m;
+}
+function charizard(stone: string): Member {
+  const m = member('Charizard');
+  m.item = stone;
+  m.moves = ['Flamethrower', 'Dragon Claw', 'Protect', 'Air Slash'];
+  m.data.moves = [...m.moves];
   return m;
 }
 function saved() {
@@ -70,12 +78,273 @@ beforeEach(() => {
     },
   });
   vi.stubGlobal('scrollTo', vi.fn());
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: vi.fn(async () => {}) },
+  });
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
     value: vi.fn(() => 'blob:configuration'),
   });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+});
+describe('Biblioteca de equipos, limpieza y cobertura', () => {
+  function teamEntry(name = 'Arena') {
+    const team = emptyTeams()[0];
+    team.slots[0] = member('Garchomp');
+    team.slots[2] = member('Pikachu');
+    return addTeamConfiguration([], team, 9, name).entry;
+  }
+  function storeTeams(entries: ReturnType<typeof teamEntry>[]) {
+    localStorage.setItem(TEAM_LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
+  }
+  function openTeams() {
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+  }
+  it('importa un .txt como equipo en Mis equipos sin modificar el constructor ni descargar', async () => {
+    render(<App />);
+    openTeams();
+    const file = new File([''], 'Sol.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'text', {
+      value: async () =>
+        'Torkoal\nAbility: Drought\nEVs: 32 HP / 32 SpA / 2 SpD\nQuiet Nature\n- Heat Wave\n- Protect',
+    });
+    fireEvent.change(screen.getByLabelText('Importar archivo de configuración'), {
+      target: { files: [file] },
+    });
+    await waitFor(() => expect(localStorage.getItem(TEAM_LIBRARY_KEY)).not.toBeNull());
+    const entries = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('Sol');
+    expect(entries[0].gen).toBe(0);
+    expect(entries[0].team.slots).toHaveLength(6);
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+  });
+  it('conserva el guardado anterior si el almacenamiento falla al guardar un equipo', () => {
+    saved();
+    storeTeams([teamEntry()]);
+    const original = localStorage.getItem(TEAM_LIBRARY_KEY);
+    render(<App />);
+    const actual = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === TEAM_LIBRARY_KEY) throw new DOMException('Quota', 'QuotaExceededError');
+      return actual.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo' }));
+    expect(screen.getByRole('alert').textContent).toContain('No se pudo guardar');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(original);
+    expect(screen.getByRole('dialog')).toBeDefined();
+  });
+  it('no sobrescribe una biblioteca de equipos corrupta al abrir o cambiar de pestaña', () => {
+    localStorage.setItem(TEAM_LIBRARY_KEY, 'corrupt');
+    render(<App />);
+    openTeams();
+    expect(screen.getByRole('alert').textContent).toContain('No se pudo restaurar la biblioteca');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe('corrupt');
+  });
+  it('guarda una copia con nombre y seis plazas sin descargar archivos', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del equipo guardado' }), {
+      target: { value: 'Mi arena' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo' }));
+    const entry = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0];
+    expect(entry.name).toBe('Mi arena');
+    expect(entry.gen).toBe(9);
+    expect(entry.team.slots).toHaveLength(6);
+    expect(entry.team.slots[0].data.name).toBe('Garchomp');
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre equipo 1' }), {
+      target: { value: 'Nombre nuevo' },
+    });
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0].name).toBe('Mi arena');
+    openTeams();
+    expect(
+      screen.getByRole('table', { name: 'Equipos guardados por nombre' }).textContent,
+    ).toContain('Mi arena');
+    expect(screen.getByRole('tab', { name: /Mis equipos/ }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+  });
+  it('exige dos confirmaciones y conserva el otro equipo, su selección y la biblioteca', () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2/ }));
+    const original = localStorage.getItem(KEY),
+      library = localStorage.getItem(TEAM_LIBRARY_KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la limpieza' }));
+    expect(
+      (screen.getByRole('button', { name: 'Confirmar y limpiar equipo' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la limpieza' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Escribe LIMPIAR para confirmar' }), {
+      target: { value: 'LIMPIAR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar y limpiar equipo' }));
+    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    expect(stored.teams[0].slots).toEqual(Array(6).fill(null));
+    expect(stored.teams[1].slots[0].data.name).toBe('Torkoal');
+    expect(stored.teams[0].name).toBe(JSON.parse(original!).teams[0].name);
+    expect(
+      screen
+        .getByRole('button', { name: /Seleccionar plaza 1 de equipo 2/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(library);
+  });
+  it('ordena Pokémon por especie y equipos por su nombre, incluso tras renombrar', () => {
+    const p = addConfiguration([], member('Pikachu'), 9, 'AAA');
+    const g = addConfiguration(p.entries, member('Garchomp'), 9, 'ZZZ');
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: [p.entry, g.entry] }));
+    storeTeams([teamEntry('Zeta'), teamEntry('Ámbar')]);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Garchomp');
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Ámbar');
+    fireEvent.click(screen.getByRole('button', { name: 'Renombrar equipo Zeta' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del equipo guardado' }), {
+      target: { value: 'Alba' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Alba');
+    const entries = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries;
+    expect(entries.find((e: { name: string }) => e.name === 'Alba').team.name).toBe('Alba');
+  });
+  it('exporta equipos con copia o descarga voluntaria y permite eliminarlos', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar equipo Arena' }));
+    expect(
+      (screen.getByRole('textbox', { name: 'Texto de Showdown' }) as HTMLTextAreaElement).value,
+    ).toContain('Garchomp');
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar equipo' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar .txt' }));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo Arena' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo Arena' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo guardado' }));
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].data.name).toBe('Garchomp');
+  });
+  it('carga el equipo completo en el destino elegido después de confirmar el reemplazo', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Equipo de destino' }), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Arena en/ }));
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].slots[0].data.name).toBe('Torkoal');
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar equipo' }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].name).toBe('Arena'));
+    const team = JSON.parse(localStorage.getItem(KEY)!).teams[1];
+    expect(team.slots[0].data.name).toBe('Garchomp');
+    expect(team.slots[1]).toBeNull();
+    expect(team.slots[2].data.name).toBe('Pikachu');
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].name).not.toBe('Arena');
+  });
+  it('valida todos los miembros antes de reemplazar y conserva los equipos ante un error', async () => {
+    saved();
+    storeTeams([teamEntry()]);
+    render(<App />);
+    openTeams();
+    const original = localStorage.getItem(KEY);
+    vi.mocked(loadPokemon).mockImplementation(async (name) => {
+      if (name === 'Pikachu') throw new Error('Sin conexión');
+      return fixture(name);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Arena en/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar equipo' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Sin conexión'));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(1);
+  });
+  it('convierte equipos guardados de generación 9 a Champions antes de cargar', async () => {
+    const team = emptyTeams()[0];
+    team.slots[3] = member('Torkoal');
+    team.slots[3].evs = { hp: 252, atk: 0, def: 0, spa: 252, spd: 4, spe: 0 };
+    storeTeams(addTeamConfiguration([], team, 9, 'Sol').entries);
+    render(<App />);
+    openTeams();
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Sol en/ }));
+    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull());
+    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    expect(stored.gen).toBe(0);
+    expect(stored.teams[0].slots[3].evs).toEqual({
+      hp: 32,
+      atk: 0,
+      def: 0,
+      spa: 32,
+      spd: 1,
+      spe: 0,
+    });
+    expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0].gen).toBe(9);
+  });
+  it('muestra multiplicadores y totales bajo cada equipo', () => {
+    saved();
+    render(<App />);
+    const table = screen.getAllByRole('table')[0];
+    const row = within(table)
+      .getAllByRole('row')
+      .find((r) => within(r).queryByRole('rowheader', { name: 'Hielo' }))!;
+    expect(within(row).getAllByRole('cell')[0].textContent).toBe('4×');
+    expect(
+      within(row)
+        .getAllByRole('cell')
+        .slice(-2)
+        .map((cell) => cell.textContent),
+    ).toEqual(['1', '0']);
+    expect(screen.getAllByRole('table')).toHaveLength(2);
+  });
+  it('agrupa efectos por equipo lado a lado, aplica Velo y Refuerzo, y desactiva Refuerzo en singles', () => {
+    render(
+      <Calculator members={[member('Garchomp'), member('Torkoal')]} gen={9} onClose={() => {}} />,
+    );
+    const left = screen.getByRole('group', { name: 'Equipo 1' }),
+      right = screen.getByRole('group', { name: 'Equipo 2' });
+    expect(left.parentElement?.className).toBe('team-effects-grid');
+    expect(left.parentElement).toBe(right.parentElement);
+    expect(within(left).getAllByRole('checkbox')).toHaveLength(5);
+    const move = screen.getByRole('button', { name: /^Earthquake/ });
+    const base = move.querySelector('.move-damage-value')!.textContent;
+    fireEvent.click(within(right).getByRole('checkbox', { name: 'Velo Aurora' }));
+    expect(move.querySelector('.move-damage-value')!.textContent).not.toBe(base);
+    fireEvent.click(within(right).getByRole('checkbox', { name: 'Velo Aurora' }));
+    fireEvent.click(within(left).getByRole('checkbox', { name: 'Refuerzo' }));
+    expect(move.querySelector('.move-damage-value')!.textContent).not.toBe(base);
+    fireEvent.click(screen.getByRole('button', { name: 'Singles' }));
+    expect(
+      (within(left).getByRole('checkbox', { name: 'Refuerzo' }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (within(left).getByRole('checkbox', { name: 'Refuerzo' }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
 });
 describe('Champions, naturalezas, tema y configuraciones', () => {
   it('activa Champions y limita el editor a 32 SP / 66 con nivel e IVs fijos', async () => {
@@ -107,6 +376,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Movimiento 1' }), {
       target: { value: 'Heat Wave' },
     });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Movimiento 1' }), { key: 'Enter' });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'EV PS' }), {
       target: { value: '32' },
     });
@@ -150,9 +420,9 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
   it('borra todos los Pokémon seleccionados de ambos equipos e ignora las plazas vacías', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 2:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar plaza 6 de equipo 2' }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar plaza 6 de equipo 2' }));
     const button = screen.getByRole('button', { name: 'Borrar' });
     expect((button as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(button);
@@ -196,9 +466,23 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.getByRole('columnheader', { name: /Reparto EVs/ })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'Naturaleza' })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'Movimientos' })).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Tiburón ofensivo .txt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar Tiburón ofensivo' }));
+    const exportDialog = screen.getByRole('dialog', { name: 'Exportar a Showdown' });
+    const text = (
+      within(exportDialog).getByRole('textbox', {
+        name: 'Texto de Showdown',
+      }) as HTMLTextAreaElement
+    ).value;
+    expect(text).toContain('Garchomp');
+    expect(text).toContain('Level: 50');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Copiar configuración' }));
+    await within(exportDialog).findByRole('button', { name: 'Copiado' });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Descargar .txt' }));
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Cerrar ventana' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Equipo de destino' }), {
       target: { value: '1' },
     });
@@ -247,7 +531,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
   it('guarda el Pokémon seleccionado sin descargar archivos', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar configuración' }));
     expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).entries).toHaveLength(1);
     expect(URL.createObjectURL).not.toHaveBeenCalled();
@@ -310,6 +594,321 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.queryByRole('img', { name: /Objeto equipado/ })).toBeNull();
   });
 });
+describe('Tarjetas, exportación general y megaevolución', () => {
+  it('selecciona y deselecciona al pulsar la tarjeta, pero el nombre solo edita', () => {
+    saved();
+    render(<App />);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/Tu estrategia empieza/)).toBeNull();
+    expect(screen.queryByText('Cada detalle cuenta.')).toBeNull();
+    const selection = screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ });
+    const card = selection.closest('article')!;
+    fireEvent.click(within(card).getByRole('img', { name: 'Garchomp' }));
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    expect(screen.getByRole('dialog', { name: 'Editar Pokémon' })).toBeDefined();
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(within(card).getByText('Earthquake'));
+    expect(selection.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    expect(selection.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(selection);
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+  });
+  it('exporta una configuración Champions y mantiene el texto disponible si falla copiar', async () => {
+    const m = member('Torkoal');
+    m.evs.hp = 32;
+    m.evs.spa = 32;
+    m.evs.spd = 2;
+    const library = addConfiguration([], m, 0, 'Sol');
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: library.entries }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar Sol' }));
+    const dialog = screen.getByRole('dialog', { name: 'Exportar a Showdown' });
+    const text = within(dialog).getByRole('textbox', {
+      name: 'Texto de Showdown',
+    }) as HTMLTextAreaElement;
+    expect(text.value).toContain('EVs: 32 HP / 32 SpA / 2 SpD');
+    expect(text.readOnly).toBe(true);
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Copiar configuración' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('manualmente');
+    expect(text.value).toContain('Torkoal');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+  it.each([
+    {
+      gen: 0 as Gen,
+      stone: 'Charizardite X',
+      form: 'Charizard-Mega-X',
+      ability: 'Tough Claws',
+      stat: 150,
+    },
+    {
+      gen: 9 as Gen,
+      stone: 'Charizardite Y',
+      form: 'Charizard-Mega-Y',
+      ability: 'Drought',
+      stat: 179,
+    },
+  ])(
+    'activa $form en perfil $gen, actualiza sprite, estadísticas y daño y conserva el equipo',
+    async ({ gen, stone, form, ability, stat }) => {
+      const teams = emptyTeams();
+      teams[0].slots[0] = charizard(stone);
+      teams[1].slots[0] = member('Garchomp');
+      localStorage.setItem(KEY, JSON.stringify({ version: 1, gen, teams }));
+      const before = localStorage.getItem(KEY);
+      render(<App />);
+      expect(
+        (screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value,
+      ).toBe(String(gen));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
+      const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+      const beforeDamage = within(region).getByRole('button', {
+        name: /^Flamethrower/,
+      }).textContent;
+      const toggle = within(region).getByRole('checkbox', {
+        name: 'Megaevolucionar Charizard (equipo 1)',
+      });
+      fireEvent.click(toggle);
+      const image = await within(region).findByRole('img', { name: form });
+      expect(image.getAttribute('src')).toBe(`https://example.com/${form}.png`);
+      expect(within(region).getByText(ability)).toBeDefined();
+      const statInput = within(region).getByRole('combobox', { name: `At. Esp. ${form}` });
+      expect(statInput.closest('label')?.querySelector('strong')?.textContent).toBe(String(stat));
+      expect(within(region).getByRole('button', { name: /^Flamethrower/ }).textContent).not.toBe(
+        beforeDamage,
+      );
+      fireEvent.click(toggle);
+      expect(within(region).getByRole('img', { name: 'Charizard' })).toBeDefined();
+      expect(within(region).getByRole('button', { name: /^Flamethrower/ }).textContent).toBe(
+        beforeDamage,
+      );
+      expect(localStorage.getItem(KEY)).toBe(before);
+    },
+  );
+  it('no ofrece megaevolución con una piedra incompatible o en generaciones anteriores', () => {
+    const m = charizard('Garchompite');
+    const view = render(<Calculator members={[m, member('Pikachu')]} gen={9} onClose={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: /Megaevolucionar/ })).toBeNull();
+    view.unmount();
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={5}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: /Megaevolucionar/ })).toBeNull();
+  });
+  it('mantiene las estadísticas mega ante un error de imagen y permite reintentar', async () => {
+    vi.mocked(loadPokemon).mockRejectedValueOnce(new Error('network'));
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={9}
+        onClose={() => {}}
+      />,
+    );
+    const toggle = screen.getByRole('checkbox', { name: 'Megaevolucionar Charizard (equipo 1)' });
+    fireEvent.click(toggle);
+    await screen.findByText(/No se pudo cargar la imagen mega/);
+    expect(screen.getByRole('combobox', { name: 'Ataque Charizard-Mega-X' })).toBeDefined();
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    await screen.findByRole('img', { name: 'Charizard-Mega-X' });
+    expect(screen.queryByText(/No se pudo cargar la imagen mega/)).toBeNull();
+  });
+});
+describe('Champions inicial, selector de movimientos y repartos del cálculo', () => {
+  it('usa Champions al iniciar y conserva la elección guardada al recargar', async () => {
+    const view = render(<App />);
+    const profile = screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement;
+    expect(profile.value).toBe('0');
+    fireEvent.change(profile, { target: { value: '9' } });
+    await waitFor(() => expect(profile.disabled).toBe(false));
+    view.unmount();
+    render(<App />);
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+  });
+  it('muestra filas con tipo, icono, potencia, acierto, PP y descripción y busca en español', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    const input = screen.getByRole('combobox', { name: 'Movimiento 1' });
+    fireEvent.focus(input);
+    const option = within(
+      screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' }),
+    ).getByRole('option', { name: 'Earthquake' });
+    expect(within(option).getByText('Terremoto')).toBeDefined();
+    expect(within(option).getByText('Tierra').classList.contains('type-ground')).toBe(true);
+    expect(within(option).getByRole('img', { name: 'Categoría Físico' })).toBeDefined();
+    expect(within(option).getByText('100')).toBeDefined();
+    expect(within(option).getByText('100%')).toBeDefined();
+    expect(within(option).getByText('16')).toBeDefined();
+    expect(option.querySelector('.move-option-description')?.textContent?.length).toBeGreaterThan(
+      10,
+    );
+    fireEvent.change(input, { target: { value: 'roca' } });
+    const list = screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' });
+    expect(within(list).getAllByRole('option')).toHaveLength(1);
+    expect(within(list).getByRole('option', { name: 'Rock Slide' })).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('Rock Slide');
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.change(input, { target: { value: 'Heat Wave' } });
+    expect(
+      within(screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' })).queryByRole(
+        'option',
+        { name: 'Heat Wave' },
+      ),
+    ).toBeNull();
+    expect(screen.getByText('No hay movimientos aprendibles que coincidan.')).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect((input as HTMLInputElement).value).toBe('Rock Slide');
+    expect(screen.getByRole('dialog', { name: 'Editar Pokémon' })).toBeDefined();
+  }, 10000);
+  it('muestra los datos del movimiento elegido y permite limpiar o elegir con teclado', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Torkoal' }));
+    const input = screen.getByRole('combobox', { name: 'Movimiento 2' });
+    const field = input.closest('.move-picker')!;
+    expect(
+      within(field as HTMLElement).getByRole('img', { name: 'Categoría Especial' }),
+    ).toBeDefined();
+    expect(within(field as HTMLElement).getByText('Fuego')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('95')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('90%')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('16')).toBeDefined();
+    fireEvent.focus(input);
+    fireEvent.click(screen.getByRole('option', { name: 'Sin movimiento' }));
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(field.querySelector('.selected-move-details')).toBeNull();
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('Protect');
+  });
+  it('muestra el tipo de cada movimiento en las tarjetas del constructor', () => {
+    saved();
+    render(<App />);
+    const card = screen
+      .getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ })
+      .closest('article')!;
+    const move = within(card).getByText('Earthquake').parentElement!;
+    expect(within(move).getByText('Tierra').classList.contains('type-ground')).toBe(true);
+  });
+  it.each([
+    { gen: 0 as Gen, max: 32, total: 66, label: 'SP' },
+    { gen: 9 as Gen, max: 252, total: 510, label: 'EVs' },
+  ])(
+    'edita $label respetando sus límites, conserva PS y restablece sin modificar el equipo',
+    ({ gen, max, total, label }) => {
+      saved();
+      const savedTeams = JSON.parse(localStorage.getItem(KEY)!);
+      savedTeams.gen = gen;
+      savedTeams.teams[0].slots[0].hpPercent = 40;
+      localStorage.setItem(KEY, JSON.stringify(savedTeams));
+      const before = localStorage.getItem(KEY);
+      render(<App />);
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
+      const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+      const oldDamage = within(region).getByRole('button', { name: /^Earthquake/ }).textContent;
+      const attack = within(region).getByRole('spinbutton', {
+        name: `${label} Ataque de equipo 1`,
+      });
+      fireEvent.change(attack, { target: { value: String(max) } });
+      expect(within(region).getByRole('button', { name: /^Earthquake/ }).textContent).not.toBe(
+        oldDamage,
+      );
+      fireEvent.change(attack, { target: { value: String(max + 1) } });
+      expect(within(region).getByRole('alert').textContent).toContain('entero');
+      expect((attack as HTMLInputElement).value).toBe(String(max));
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} PS de equipo 1` }),
+        { target: { value: String(max) } },
+      );
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} Velocidad de equipo 1` }),
+        { target: { value: String(total - 2 * max) } },
+      );
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} Defensa de equipo 1` }),
+        { target: { value: '1' } },
+      );
+      expect(within(region).getByRole('alert').textContent).toContain(String(total));
+      const hp = within(region)
+        .getByText('PS actuales')
+        .parentElement!.querySelector('dd')!.textContent!;
+      expect(hp).toContain('40.0 %');
+      expect(hp).toContain('86 / 215');
+      fireEvent.click(within(region).getByRole('button', { name: 'Restablecer reparto' }));
+      expect((attack as HTMLInputElement).value).toBe('0');
+      expect(within(region).queryByRole('alert')).toBeNull();
+      expect(within(region).getByRole('button', { name: /^Earthquake/ }).textContent).toBe(
+        oldDamage,
+      );
+      expect(localStorage.getItem(KEY)).toBe(before);
+    },
+  );
+  it('conserva los SP editados al activar/desactivar la megaevolución', async () => {
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={0}
+        onClose={() => {}}
+      />,
+    );
+    const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+    fireEvent.change(within(region).getByRole('spinbutton', { name: 'SP Ataque de equipo 1' }), {
+      target: { value: '32' },
+    });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /Megaevolucionar/ }));
+    await within(region).findByRole('img', { name: 'Charizard-Mega-X' });
+    const attack = within(region).getByRole('combobox', { name: 'Ataque Charizard-Mega-X' });
+    expect(attack.closest('label')?.querySelector('strong')?.textContent).toBe('182');
+    fireEvent.click(within(region).getByRole('checkbox', { name: /Megaevolucionar/ }));
+    expect(
+      within(region)
+        .getByRole('combobox', { name: 'Ataque Charizard' })
+        .closest('label')
+        ?.querySelector('strong')?.textContent,
+    ).toBe('136');
+    expect(
+      (
+        within(region).getByRole('spinbutton', {
+          name: 'SP Ataque de equipo 1',
+        }) as HTMLInputElement
+      ).value,
+    ).toBe('32');
+  });
+  it('muestra tipo coloreado, iconos, potencia, acierto y prioridad positiva/negativa en la calculadora', () => {
+    const m = member('Torkoal');
+    m.moves = ['Roar', 'Protect', 'Heat Wave', 'Eruption'];
+    render(<Calculator members={[m, member('Pikachu')]} gen={9} onClose={() => {}} />);
+    const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+    const roar = within(region).getByRole('button', { name: /^Roar/ });
+    expect(within(roar).getByText('Normal').classList.contains('type-normal')).toBe(true);
+    expect(within(roar).getByText('Prioridad -6').classList.contains('negative')).toBe(true);
+    expect(within(roar).getByRole('img', { name: 'Categoría Estado' })).toBeDefined();
+    const protect = within(region).getByRole('button', { name: /^Protect/ });
+    expect(within(protect).getByText('Prioridad +4').classList.contains('positive')).toBe(true);
+    const heat = within(region).getByRole('button', { name: /^Heat Wave/ });
+    expect(within(heat).getByText('Fuego').classList.contains('type-fire')).toBe(true);
+    expect(within(heat).getByText('95')).toBeDefined();
+    expect(within(heat).getByText('90%')).toBeDefined();
+  });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -318,20 +917,28 @@ afterEach(() => {
 describe('Flujos completos de interfaz', () => {
   it('muestra doce plazas y exige una selección para las acciones', () => {
     render(<App />);
-    expect(screen.getAllByRole('checkbox')).toHaveLength(12);
+    expect(screen.getAllByRole('button', { name: /Seleccionar plaza/ })).toHaveLength(12);
     expect(
       (screen.getByRole('button', { name: 'Añadir / editar' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
       (screen.getByRole('button', { name: 'Enfrentar Pokémon' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar plaza 1 de equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar plaza 1 de equipo 1' }));
     expect(
       (screen.getByRole('button', { name: 'Añadir / editar' }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
   it('añade una especie, valida movimientos y conserva PS al cambiar IVs', async () => {
     render(<App />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '9' },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).disabled,
+      ).toBe(false),
+    );
     fireEvent.click(screen.getAllByRole('button', { name: /Añadir Pokémon/ })[0]);
     fireEvent.change(screen.getByRole('combobox', { name: 'Especie Pokémon' }), {
       target: { value: 'Torkoal' },
@@ -343,6 +950,7 @@ describe('Flujos completos de interfaz', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Movimiento 1' }), {
       target: { value: 'Heat Wave' },
     });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Movimiento 1' }), { key: 'Enter' });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Porcentaje de PS' }), {
       target: { value: '50' },
     });
@@ -397,13 +1005,13 @@ describe('Flujos completos de interfaz', () => {
   it('exige equipos distintos y abre un cálculo bidireccional con cuatro movimientos', async () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 2 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 2 de equipo 1:/ }));
     expect(
       (screen.getByRole('button', { name: 'Enfrentar Pokémon' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 2 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 2 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
     const dialog = screen.getByRole('dialog', { name: 'Calculadora de daño' });
     fireEvent.click(within(dialog).getByRole('button', { name: /^Heat Wave/ }));
@@ -418,7 +1026,7 @@ describe('Flujos completos de interfaz', () => {
   it('permite cancelar el borrado y liberar únicamente la plaza elegida', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();

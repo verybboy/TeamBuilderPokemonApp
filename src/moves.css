@@ -1,0 +1,330 @@
+.editor-moves {
+  display: grid;
+  gap: 18px;
+}
+.move-picker {
+  position: relative;
+  min-width: 0;
+}
+.move-picker > label {
+  margin-bottom: 7px;
+}
+.move-picker-input {
+  position: relative;
+}
+.move-picker-input input {
+  width: 100%;
+  padding-right: 32px;
+  font-weight: 600;
+}
+.move-picker-input > svg {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  pointer-events: none;
+  color: var(--muted);
+}
+.selected-move-details {
+  padding: 10px 12px;
+  margin-top: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--soft);
+}
+.move-localized-name {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.move-facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--ink);
+}
+.move-facts .type,
+.move-option .type {
+  font-size: 10px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+.move-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.move-category svg {
+  width: 24px;
+  height: 20px;
+  padding: 2px 3px;
+  border-radius: 3px;
+}
+.category-physical svg {
+  color: #ffdb78;
+  background: #b7431c;
+}
+.category-special svg {
+  color: #fff;
+  background: #476bbc;
+}
+.category-status svg {
+  color: #fff;
+  background: #717880;
+}
+.move-metric {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 45px;
+  gap: 3px;
+}
+.move-metric small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+.move-metric b {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.move-description {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 9px;
+}
+.move-priority {
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.move-priority.positive {
+  color: var(--positive);
+}
+.move-priority.negative {
+  color: var(--negative);
+}
+.move-picker-popup {
+  position: absolute;
+  top: 62px;
+  left: 0;
+  width: 100%;
+  z-index: 10;
+  background: var(--paper);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px var(--shadow);
+  overflow: auto;
+}
+.move-list {
+  min-width: 680px;
+  max-height: 330px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.move-picker-popup.popup-up {
+  top: auto;
+  bottom: calc(100% - 22px);
+}
+.move-list-heading,
+.move-option {
+  display: grid;
+  grid-template-columns: minmax(125px, 1.2fr) 65px 34px 48px 51px 42px minmax(160px, 2fr);
+  gap: 7px;
+  align-items: center;
+  padding: 10px 12px;
+  min-width: 680px;
+}
+.move-list-heading {
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 9px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+.move-option {
+  color: var(--ink);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 11px;
+}
+.move-option:nth-child(even) {
+  background: var(--soft);
+}
+.move-option:hover,
+.move-option.active {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: var(--soft);
+}
+.move-option[aria-selected='true'] {
+  box-shadow: inset 4px 0 0 var(--primary);
+}
+.move-option-name strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.move-option-name small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.move-option-description {
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.move-no-results {
+  padding: 20px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.card-moves > span {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 5px;
+}
+.card-move-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.card-moves .type {
+  font-size: 8px;
+  padding: 3px 5px;
+  margin: 0;
+  width: auto;
+}
+.battle-training {
+  margin-top: 18px;
+  padding: 12px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.battle-training-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.battle-training-heading h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.battle-training-heading > span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.battle-training-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.battle-training-grid label {
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.battle-training-grid label > span {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.battle-training-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 4px;
+  text-align: center;
+}
+.battle-training-grid strong {
+  color: var(--primary);
+  font-size: 14px;
+}
+.battle-training > .button {
+  margin-top: 12px;
+}
+.battle-training > p {
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+.move-choice {
+  padding: 14px 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+.move-choice .battle-move-info {
+  display: block;
+  min-width: 0;
+}
+.move-choice .battle-move-info > strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.move-choice .move-facts {
+  gap: 10px;
+}
+.move-choice .move-category {
+  font-size: 12px;
+}
+.move-choice .type {
+  font-size: 11px;
+  padding: 6px 9px;
+}
+.move-choice .move-metric small {
+  font-size: 11px;
+  margin-top: 0;
+}
+.move-choice .move-metric b {
+  color: var(--ink);
+  font-size: 16px;
+}
+.move-choice .move-damage-value {
+  color: var(--primary);
+  font-size: 18px;
+  align-self: end;
+}
+.combatant-1 .move-choice .move-damage-value {
+  color: var(--red);
+}
+@media (max-width: 480px) {
+  .move-facts {
+    gap: 7px;
+  }
+  .move-picker-popup {
+    max-width: calc(100vw - 48px);
+  }
+  .move-option-name strong {
+    font-size: 12px;
+  }
+  .battle-training-grid label > span {
+    font-size: 10px;
+  }
+}
