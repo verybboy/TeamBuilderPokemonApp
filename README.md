@@ -29,7 +29,7 @@ Remove-Item Env:RUN_LIVE_API
 
 ## Uso
 
-1. Elige las mecánicas (generaciones I–IX o Pokémon Champions) y añade un Pokémon en una plaza vacía. Los nombres de especies, habilidades, objetos y movimientos se usan en inglés para mantener compatibilidad con Showdown.
+1. Pokémon Champions es el perfil inicial para equipos nuevos. Los equipos guardados recuperan su perfil anterior. Puedes elegir generaciones I–IX o Champions y añadir un Pokémon en una plaza vacía. Especies, habilidades, objetos y movimientos mantienen sus nombres ingleses para Showdown; el selector añade los nombres españoles de los movimientos cuando están disponibles.
 2. Carga la especie y configura sus movimientos, habilidad, naturaleza, objeto, nivel, sexo, variocolor, IVs, EVs y PS. Valores iniciales: nivel 50, IVs 31, EVs 0 y PS al 100 %. El porcentaje de PS se conserva al cambiar características.
 3. Pulsa cualquier zona de una tarjeta Pokémon para seleccionarla o deseleccionarla; el nombre abre el editor sin cambiar la selección. También puedes seleccionar con Tab y Enter/Espacio. Puedes seleccionar varios Pokémon de ambos equipos y borrarlos juntos tras revisar la lista; las plazas vacías se ignoran. Selecciona exactamente dos plazas ocupadas de equipos diferentes para enfrentar Pokémon.
 4. La calculadora muestra los cuatro movimientos de ambos Pokémon y recalcula al configurar clima, terreno, pantallas, estados, boosts, críticos, singles/dobles y Espacio Raro. Incluye Viento Afín y activación de efectos condicionales de habilidades.
@@ -38,6 +38,8 @@ Remove-Item Env:RUN_LIVE_API
 7. Cada naturaleza muestra las características que aumenta y reduce. En el editor y calculadora, flechas verdes/rojas indican la subida/bajada; las naturalezas neutras no muestran flechas.
 8. Usa el botón de luna/sol para cambiar entre modo claro y oscuro. Se guarda la preferencia, y inicialmente se respeta la del sistema. La paleta usa azul, rojo Poké Ball y amarillo Pikachu.
 9. En la calculadora, activa **Megaevolucionar** si el Pokémon lleva una piedra compatible. La forma depende de la piedra (por ejemplo, Charizardite X/Y); cambian estadísticas, tipos, habilidad, sprite, daño y velocidad. Puedes desactivarla para recuperar la forma original. La configuración del equipo no se modifica y se conservan nivel, naturaleza, IVs/EVs/SP, movimientos, porcentaje de PS, variocolor y boosts. El clima sigue configurándose manualmente.
+10. En el editor, el selector de movimientos presenta filas con nombre español/inglés, tipo coloreado, icono físico/especial/estado, potencia, acierto, PP y descripción breve. Busca por nombre, tipo o categoría; usa las flechas y Enter para seleccionar o Escape para cerrar la lista. Solo incluye movimientos aprendibles y disponibles en el perfil. Las tarjetas del constructor también muestran el tipo de cada movimiento.
+11. En la calculadora, edita los seis EVs/SP de cada Pokémon para comparar repartos. Se recalculan PS, estadísticas, daño y velocidad, conservando el porcentaje de PS. Los repartos respetan los límites 252/510 o 32/66; los valores inválidos no se aplican. **Restablecer reparto** recupera el original. Los cambios son locales a la comparación y no alteran equipos o builds guardados; se conservan al activar/desactivar una megaevolución. Los datos de movimientos son más grandes e incluyen prioridad positiva/negativa.
 
 ## Datos y mecánicas
 
@@ -48,6 +50,7 @@ Remove-Item Env:RUN_LIVE_API
 - En generaciones I–II el motor usa DVs derivados de los IVs, calcula los DVs de PS a partir de las otras características y asume entrenamiento máximo. Los campos de EVs, naturaleza y habilidad se desactivan. Clima, terrenos, dobles y Espacio Raro se habilitan según su generación.
 - El orden de ataque usa prioridades, Prankster, Gale Wings y Triage; velocidad efectiva del motor con boosts, estados, objetos, clima y Viento Afín; Espacio Raro; Stall, Mycelium Might y objetos que alteran el orden. Indica Speed Tie y advierte de las activaciones aleatorias de Quick Claw / Quick Draw.
 - El cálculo es de un ataque aislado, no un simulador completo de turnos. No aplica automáticamente el clima de Drought/Drizzle: configura el campo. Los estados pueden impedir actuar; el orden mostrado presupone que ambos pueden hacerlo.
+- El [catálogo local de movimientos](src/data/README.md) completa precisión, PP, nombres/descripciones y prioridades con PokéAPI y Showdown. No requiere red para abrir el selector. Se muestran PP máximos con 3 PP Más en perfiles clásicos y los PP propios de Champions (por ejemplo, Heat Wave: 12; Protect: 8). Tipo, categoría y potencia base siguen el motor del perfil; las potencias variables se identifican como tales. Acierto y prioridades son los valores base, sin aplicar modificadores de campo/habilidad en las fichas. Las descripciones son orientativas de los juegos y no describen todas las interacciones Champions. `npm run update:moves` regenera el snapshot con red; el build normal usa el archivo versionado.
 
 ## Guardado y formato Showdown
 
@@ -92,6 +95,11 @@ Las formas dependen de los recursos disponibles en PokéAPI y en la versión ins
 | `src/theme.css`                | Paleta Pokémon, temas claro/oscuro y estilos de biblioteca                              |
 | `src/champions.test.ts`        | Fórmula Champions, límites, conversiones, naturalezas y biblioteca                      |
 | `src/mega.test.ts`             | Piedras y formas mega, estadísticas, daño, velocidad y conservación de la configuración |
+| `src/MovePicker.tsx`           | Selector accesible por filas y fichas de movimientos con iconos                         |
+| `src/moves.ts`                 | Datos de movimiento por perfil, precisión, PP y prioridades históricas                  |
+| `src/moves.css`                | Selector adaptable, tipos y datos ampliados de la calculadora                           |
+| `src/moves.test.ts`            | Datos históricos, PP Champions, prioridades y cambios de EVs/SP                         |
+| `scripts/update-moves.mjs`     | Generación del catálogo local desde datos públicos de PokéAPI y Showdown                |
 
 React + TypeScript + Vite, CSS propio, Lucide y Vitest. El código se formatea con Prettier.
 

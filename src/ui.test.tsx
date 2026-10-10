@@ -119,6 +119,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Movimiento 1' }), {
       target: { value: 'Heat Wave' },
     });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Movimiento 1' }), { key: 'Enter' });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'EV PS' }), {
       target: { value: '32' },
     });
@@ -468,6 +469,189 @@ describe('Tarjetas, exportación general y megaevolución', () => {
     expect(screen.queryByText(/No se pudo cargar la imagen mega/)).toBeNull();
   });
 });
+describe('Champions inicial, selector de movimientos y repartos del cálculo', () => {
+  it('usa Champions al iniciar y conserva la elección guardada al recargar', async () => {
+    const view = render(<App />);
+    const profile = screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement;
+    expect(profile.value).toBe('0');
+    fireEvent.change(profile, { target: { value: '9' } });
+    await waitFor(() => expect(profile.disabled).toBe(false));
+    view.unmount();
+    render(<App />);
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+  });
+  it('muestra filas con tipo, icono, potencia, acierto, PP y descripción y busca en español', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    const input = screen.getByRole('combobox', { name: 'Movimiento 1' });
+    fireEvent.focus(input);
+    const option = within(
+      screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' }),
+    ).getByRole('option', { name: 'Earthquake' });
+    expect(within(option).getByText('Terremoto')).toBeDefined();
+    expect(within(option).getByText('Tierra').classList.contains('type-ground')).toBe(true);
+    expect(within(option).getByRole('img', { name: 'Categoría Físico' })).toBeDefined();
+    expect(within(option).getByText('100')).toBeDefined();
+    expect(within(option).getByText('100%')).toBeDefined();
+    expect(within(option).getByText('16')).toBeDefined();
+    expect(option.querySelector('.move-option-description')?.textContent?.length).toBeGreaterThan(
+      10,
+    );
+    fireEvent.change(input, { target: { value: 'roca' } });
+    const list = screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' });
+    expect(within(list).getAllByRole('option')).toHaveLength(1);
+    expect(within(list).getByRole('option', { name: 'Rock Slide' })).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('Rock Slide');
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.change(input, { target: { value: 'Heat Wave' } });
+    expect(
+      within(screen.getByRole('listbox', { name: 'Opciones de Movimiento 1' })).queryByRole(
+        'option',
+        { name: 'Heat Wave' },
+      ),
+    ).toBeNull();
+    expect(screen.getByText('No hay movimientos aprendibles que coincidan.')).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect((input as HTMLInputElement).value).toBe('Rock Slide');
+    expect(screen.getByRole('dialog', { name: 'Editar Pokémon' })).toBeDefined();
+  }, 10000);
+  it('muestra los datos del movimiento elegido y permite limpiar o elegir con teclado', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Torkoal' }));
+    const input = screen.getByRole('combobox', { name: 'Movimiento 2' });
+    const field = input.closest('.move-picker')!;
+    expect(
+      within(field as HTMLElement).getByRole('img', { name: 'Categoría Especial' }),
+    ).toBeDefined();
+    expect(within(field as HTMLElement).getByText('Fuego')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('95')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('90%')).toBeDefined();
+    expect(within(field as HTMLElement).getByText('16')).toBeDefined();
+    fireEvent.focus(input);
+    fireEvent.click(screen.getByRole('option', { name: 'Sin movimiento' }));
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(field.querySelector('.selected-move-details')).toBeNull();
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('Protect');
+  });
+  it('muestra el tipo de cada movimiento en las tarjetas del constructor', () => {
+    saved();
+    render(<App />);
+    const card = screen
+      .getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ })
+      .closest('article')!;
+    const move = within(card).getByText('Earthquake').parentElement!;
+    expect(within(move).getByText('Tierra').classList.contains('type-ground')).toBe(true);
+  });
+  it.each([
+    { gen: 0 as Gen, max: 32, total: 66, label: 'SP' },
+    { gen: 9 as Gen, max: 252, total: 510, label: 'EVs' },
+  ])(
+    'edita $label respetando sus límites, conserva PS y restablece sin modificar el equipo',
+    ({ gen, max, total, label }) => {
+      saved();
+      const savedTeams = JSON.parse(localStorage.getItem(KEY)!);
+      savedTeams.gen = gen;
+      savedTeams.teams[0].slots[0].hpPercent = 40;
+      localStorage.setItem(KEY, JSON.stringify(savedTeams));
+      const before = localStorage.getItem(KEY);
+      render(<App />);
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
+      const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+      const oldDamage = within(region).getByRole('button', { name: /^Earthquake/ }).textContent;
+      const attack = within(region).getByRole('spinbutton', {
+        name: `${label} Ataque de equipo 1`,
+      });
+      fireEvent.change(attack, { target: { value: String(max) } });
+      expect(within(region).getByRole('button', { name: /^Earthquake/ }).textContent).not.toBe(
+        oldDamage,
+      );
+      fireEvent.change(attack, { target: { value: String(max + 1) } });
+      expect(within(region).getByRole('alert').textContent).toContain('entero');
+      expect((attack as HTMLInputElement).value).toBe(String(max));
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} PS de equipo 1` }),
+        { target: { value: String(max) } },
+      );
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} Velocidad de equipo 1` }),
+        { target: { value: String(total - 2 * max) } },
+      );
+      fireEvent.change(
+        within(region).getByRole('spinbutton', { name: `${label} Defensa de equipo 1` }),
+        { target: { value: '1' } },
+      );
+      expect(within(region).getByRole('alert').textContent).toContain(String(total));
+      const hp = within(region)
+        .getByText('PS actuales')
+        .parentElement!.querySelector('dd')!.textContent!;
+      expect(hp).toContain('40.0 %');
+      expect(hp).toContain('86 / 215');
+      fireEvent.click(within(region).getByRole('button', { name: 'Restablecer reparto' }));
+      expect((attack as HTMLInputElement).value).toBe('0');
+      expect(within(region).queryByRole('alert')).toBeNull();
+      expect(within(region).getByRole('button', { name: /^Earthquake/ }).textContent).toBe(
+        oldDamage,
+      );
+      expect(localStorage.getItem(KEY)).toBe(before);
+    },
+  );
+  it('conserva los SP editados al activar/desactivar la megaevolución', async () => {
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={0}
+        onClose={() => {}}
+      />,
+    );
+    const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+    fireEvent.change(within(region).getByRole('spinbutton', { name: 'SP Ataque de equipo 1' }), {
+      target: { value: '32' },
+    });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /Megaevolucionar/ }));
+    await within(region).findByRole('img', { name: 'Charizard-Mega-X' });
+    const attack = within(region).getByRole('combobox', { name: 'Ataque Charizard-Mega-X' });
+    expect(attack.closest('label')?.querySelector('strong')?.textContent).toBe('182');
+    fireEvent.click(within(region).getByRole('checkbox', { name: /Megaevolucionar/ }));
+    expect(
+      within(region)
+        .getByRole('combobox', { name: 'Ataque Charizard' })
+        .closest('label')
+        ?.querySelector('strong')?.textContent,
+    ).toBe('136');
+    expect(
+      (
+        within(region).getByRole('spinbutton', {
+          name: 'SP Ataque de equipo 1',
+        }) as HTMLInputElement
+      ).value,
+    ).toBe('32');
+  });
+  it('muestra tipo coloreado, iconos, potencia, acierto y prioridad positiva/negativa en la calculadora', () => {
+    const m = member('Torkoal');
+    m.moves = ['Roar', 'Protect', 'Heat Wave', 'Eruption'];
+    render(<Calculator members={[m, member('Pikachu')]} gen={9} onClose={() => {}} />);
+    const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+    const roar = within(region).getByRole('button', { name: /^Roar/ });
+    expect(within(roar).getByText('Normal').classList.contains('type-normal')).toBe(true);
+    expect(within(roar).getByText('Prioridad -6').classList.contains('negative')).toBe(true);
+    expect(within(roar).getByRole('img', { name: 'Categoría Estado' })).toBeDefined();
+    const protect = within(region).getByRole('button', { name: /^Protect/ });
+    expect(within(protect).getByText('Prioridad +4').classList.contains('positive')).toBe(true);
+    const heat = within(region).getByRole('button', { name: /^Heat Wave/ });
+    expect(within(heat).getByText('Fuego').classList.contains('type-fire')).toBe(true);
+    expect(within(heat).getByText('95')).toBeDefined();
+    expect(within(heat).getByText('90%')).toBeDefined();
+  });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -490,6 +674,14 @@ describe('Flujos completos de interfaz', () => {
   });
   it('añade una especie, valida movimientos y conserva PS al cambiar IVs', async () => {
     render(<App />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '9' },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).disabled,
+      ).toBe(false),
+    );
     fireEvent.click(screen.getAllByRole('button', { name: /Añadir Pokémon/ })[0]);
     fireEvent.change(screen.getByRole('combobox', { name: 'Especie Pokémon' }), {
       target: { value: 'Torkoal' },
@@ -501,6 +693,7 @@ describe('Flujos completos de interfaz', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Movimiento 1' }), {
       target: { value: 'Heat Wave' },
     });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Movimiento 1' }), { key: 'Enter' });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Porcentaje de PS' }), {
       target: { value: '50' },
     });

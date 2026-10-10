@@ -358,7 +358,7 @@ textarea:focus-visible {
   width: 36px;
   height: 36px;
 }
-.card-moves span {
+.card-moves > span {
   background: var(--soft);
   border-color: var(--line);
   color: var(--ink);

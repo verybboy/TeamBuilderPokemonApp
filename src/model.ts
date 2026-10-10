@@ -118,6 +118,19 @@ export function megaForm(member: Member, gen: Gen): string | null {
   const form = forms?.[member.data.name];
   return form && g.species.get(toID(form)) ? form : null;
 }
+export function withTraining(member: Member, gen: Gen, stat: Stat, value: number): Member {
+  if (apiGeneration(gen) < 3)
+    throw new Error('Este perfil usa entrenamiento máximo, sin EVs editables.');
+  const limits = trainingLimits(gen);
+  if (!Number.isInteger(value) || value < 0 || value > limits.perStat)
+    throw new Error(`${limits.label}: introduce un entero de 0 a ${limits.perStat}.`);
+  const evs = { ...member.evs, [stat]: value };
+  if (stats.reduce((sum, stat) => sum + evs[stat], 0) > limits.total)
+    throw new Error(
+      `El reparto de ${limits.label} no puede superar ${limits.total}. Reduce otra estadística primero.`,
+    );
+  return { ...member, evs };
+}
 export function megaEvolve(
   member: Member,
   gen: Gen,

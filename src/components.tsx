@@ -31,6 +31,8 @@ import {
 import { loadPokemon, loadItemSprite, names } from './api';
 import { exportShowdown, importShowdown } from './showdown';
 import { downloadText } from './library';
+import MovePicker from './MovePicker';
+import { typeLabels } from './moves';
 export const errorText = (e: unknown) =>
   e instanceof Error ? e.message : 'Ha ocurrido un error. Inténtalo de nuevo.';
 export function Modal({
@@ -141,26 +143,6 @@ export function Sprite({ member, large = false }: { member: Member; large?: bool
     </div>
   );
 }
-const typeLabels: Record<string, string> = {
-  normal: 'Normal',
-  fire: 'Fuego',
-  water: 'Agua',
-  electric: 'Eléctrico',
-  grass: 'Planta',
-  ice: 'Hielo',
-  fighting: 'Lucha',
-  poison: 'Veneno',
-  ground: 'Tierra',
-  flying: 'Volador',
-  psychic: 'Psíquico',
-  bug: 'Bicho',
-  rock: 'Roca',
-  ghost: 'Fantasma',
-  dragon: 'Dragón',
-  dark: 'Siniestro',
-  steel: 'Acero',
-  fairy: 'Hada',
-};
 export function Types({ types }: { types: string[] }) {
   return (
     <span className="types">
@@ -393,24 +375,24 @@ export function Editor({
               <h4>
                 Movimientos <span className="muted">Solo los que puede aprender</span>
               </h4>
-              <div className="form-grid">
+              <p className="small muted move-pp-note">
+                {gen === 0 ? 'PP disponibles en Champions.' : 'PP máximos con 3 PP Más.'} Acierto y
+                potencia base; los efectos pueden modificarlos.
+              </p>
+              <div className="editor-moves">
                 {draft.moves.map((move, i) => (
-                  <label key={i}>
-                    Movimiento {i + 1}
-                    <select
-                      value={move}
-                      onChange={(e) => {
-                        const moves = [...draft.moves];
-                        moves[i] = e.target.value;
-                        update('moves', moves);
-                      }}
-                    >
-                      <option value="">Sin movimiento</option>
-                      {draft.data.moves.map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <MovePicker
+                    key={`${draft.data.name}-${i}`}
+                    label={`Movimiento ${i + 1}`}
+                    value={move}
+                    gen={gen}
+                    names={draft.data.moves}
+                    onChange={(name) => {
+                      const moves = [...draft.moves];
+                      moves[i] = name;
+                      update('moves', moves);
+                    }}
+                  />
                 ))}
               </div>
             </div>

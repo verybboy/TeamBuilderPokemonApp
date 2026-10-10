@@ -4,8 +4,6 @@ import { Modal, Sprite, Types, NatureIndicator, errorText } from './components';
 import { attackOrder, damageFor, type BattleSettings, type SideSettings } from './battle';
 import {
   calcPokemon,
-  generations,
-  id,
   spread,
   stats,
   statLabels,
@@ -14,11 +12,15 @@ import {
   natureLabel,
   megaForm,
   megaEvolve,
+  trainingLimits,
+  withTraining,
   type Gen,
   type Member,
   type PokemonData,
+  type Stat,
 } from './model';
 import { loadPokemon } from './api';
+import { MoveDetails } from './MovePicker';
 const statuses = [
   ['', 'Sin estado'],
   ['brn', 'Quemado'],
@@ -38,6 +40,11 @@ export default function Calculator({
   onClose: () => void;
 }) {
   const era = apiGeneration(gen);
+  const limits = trainingLimits(gen);
+  const [workingMembers, setWorkingMembers] = useState<[Member, Member]>(() =>
+    structuredClone(members),
+  );
+  const [trainingErrors, setTrainingErrors] = useState<[string, string]>(['', '']);
   const formNames = members.map((member) => megaForm(member, gen));
   const [megaEnabled, setMegaEnabled] = useState<[boolean, boolean]>([false, false]);
   const [megaImages, setMegaImages] = useState<
@@ -75,7 +82,7 @@ export default function Calculator({
       active = false;
     };
   }, [gen, formNames[0], formNames[1], megaEnabled[0], megaEnabled[1]]);
-  const battleMembers = members.map((member, i) =>
+  const battleMembers = workingMembers.map((member, i) =>
     megaEnabled[i] && formNames[i]
       ? megaEvolve(member, gen, megaImages[`${gen}:${formNames[i]}`])
       : member,
@@ -108,6 +115,17 @@ export default function Calculator({
       sides[i] = { ...sides[i], ...patch };
       return { ...s, sides };
     });
+  }
+  function updateTraining(i: number, stat: Stat, value: number) {
+    try {
+      const updated = withTraining(workingMembers[i], gen, stat, value);
+      setWorkingMembers((members) => (i === 0 ? [updated, members[1]] : [members[0], updated]));
+      setTrainingErrors((errors) => (i === 0 ? ['', errors[1]] : [errors[0], '']));
+    } catch (error) {
+      setTrainingErrors((errors) =>
+        i === 0 ? [errorText(error), errors[1]] : [errors[0], errorText(error)],
+      );
+    }
   }
   const results = battleMembers.map((m, i) =>
     m.moves.map((move, j) => {
@@ -239,6 +257,58 @@ export default function Calculator({
             Efecto condicional de habilidad activo
           </label>
         )}
+        <div className="battle-training">
+          <div className="battle-training-heading">
+            <h4>Reparto de {limits.label}</h4>
+            <span>
+              {limits.label}: {stats.reduce((sum, stat) => sum + m.evs[stat], 0)} / {limits.total}
+            </span>
+          </div>
+          <div className="battle-training-grid">
+            {stats.map((stat) => (
+              <label key={stat}>
+                <span>
+                  {statLabels[stat]} <NatureIndicator nature={m.nature} stat={stat} gen={gen} />
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={limits.perStat}
+                  step={1}
+                  disabled={era < 3}
+                  aria-label={`${limits.label} ${statLabels[stat]} de equipo ${i + 1}`}
+                  value={m.evs[stat]}
+                  onChange={(e) => updateTraining(i, stat, Number(e.target.value))}
+                />
+                <strong>{p.rawStats[stat]}</strong>
+              </label>
+            ))}
+          </div>
+          {trainingErrors[i] && (
+            <p role="alert" className="error small">
+              {trainingErrors[i]}
+            </p>
+          )}
+          <button
+            className="button secondary compact"
+            disabled={era < 3}
+            onClick={() => {
+              setWorkingMembers((value) => {
+                const next = [...value] as [Member, Member];
+                next[i] = { ...next[i], evs: { ...members[i].evs } };
+                return next;
+              });
+              setTrainingErrors((errors) => (i === 0 ? ['', errors[1]] : [errors[0], '']));
+            }}
+          >
+            Restablecer reparto
+          </button>
+          <p className="small muted">
+            {era < 3
+              ? 'Este perfil usa entrenamiento máximo.'
+              : 'Cambios para esta comparación. Se conserva el porcentaje de PS.'}
+          </p>
+        </div>
         <h4>Modificadores de características</h4>
         <div className="boosts">
           {stats
@@ -270,8 +340,7 @@ export default function Calculator({
         </h4>
         <div className="damage-moves">
           {m.moves.map((move, j) => {
-            const r = results[i][j].result,
-              moveData = generations.get(gen).moves.get(id(move) as never);
+            const r = results[i][j].result;
             return (
               <div className={`damage-move ${selected[i] === j ? 'active' : ''}`} key={j}>
                 <button
@@ -280,15 +349,11 @@ export default function Calculator({
                   onClick={() => setSelected((v) => (i === 0 ? [j, v[1]] : [v[0], j]))}
                   aria-pressed={selected[i] === j}
                 >
-                  <span>
+                  <span className="battle-move-info">
                     <strong>{move || 'Sin movimiento'}</strong>
-                    <small>
-                      {moveData
-                        ? `${moveData.type} · ${moveData.category === 'Status' ? 'Estado' : moveData.category === 'Physical' ? 'Físico' : 'Especial'} · ${moveData.basePower} potencia`
-                        : '—'}
-                    </small>
+                    <MoveDetails name={move} gen={gen} />
                   </span>
-                  <b>
+                  <b className="move-damage-value">
                     {r
                       ? r.statusMove
                         ? 'Estado'

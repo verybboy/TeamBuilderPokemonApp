@@ -863,7 +863,7 @@ main {
   grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
-.card-moves span {
+.card-moves > span {
   font-size: 9px;
   background: #f5f7f0;
   border: 1px solid #edf0e8;
@@ -1610,7 +1610,7 @@ main {
     height: 86px;
     width: 86px;
   }
-  .card-moves span {
+  .card-moves > span {
     font-size: 10px;
   }
   .pokemon-title .name-button {
@@ -1834,7 +1834,7 @@ main {
   .pokemon-meta {
     font-size: 10px;
   }
-  .card-moves span {
+  .card-moves > span {
     font-size: 10px;
   }
   .team-slots {

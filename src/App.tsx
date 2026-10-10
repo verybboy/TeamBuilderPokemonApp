@@ -37,6 +37,8 @@ import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
 import Library from './ConfigurationLibrary';
+import { moveInfo } from './moves';
+import { MoveType } from './MovePicker';
 import {
   LIBRARY_KEY,
   restoreLibrary,
@@ -79,7 +81,7 @@ export default function App() {
     [view, setView] = useState<'teams' | 'library'>('teams'),
     [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
-    [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 9),
+    [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 0),
     [selected, setSelected] = useState<Slot[]>([]),
     [editor, setEditor] = useState<Slot | null>(null),
     [transfer, setTransfer] = useState<{ mode: 'import' | 'export'; team: number } | null>(null),
@@ -256,14 +258,37 @@ export default function App() {
     setBusy(true);
     setMessage('');
     try {
-      const imported = await Promise.all(demo.map((text) => importShowdown(text, 9)));
+      const profile: Gen = gen === 0 ? 0 : 9;
+      const texts =
+        profile === 0
+          ? [
+              demo[0].replace(
+                /Amoonguss[\s\S]*$/,
+                'Venusaur @ Sitrus Berry\nAbility: Chlorophyll\nEVs: 252 HP / 156 Def / 100 SpD\nRelaxed Nature\n- Sleep Powder\n- Sludge Bomb\n- Giga Drain\n- Protect',
+              ),
+              demo[1].replace(
+                /Flutter Mane[\s\S]*$/,
+                'Sylveon @ Sitrus Berry\nAbility: Pixilate\nEVs: 4 HP / 252 SpA / 252 Spe\nTimid Nature\n- Moonblast\n- Hyper Voice\n- Quick Attack\n- Protect',
+              ),
+            ]
+          : demo;
+      const imported = await Promise.all(texts.map((text) => importShowdown(text, 9)));
+      if (profile === 0) {
+        for (const team of imported)
+          for (let i = 0; i < team.length; i++) {
+            const m = convertMemberProfile(team[i], 9, profile);
+            m.data = await loadPokemon(m.data.name, profile);
+            validateMember(m, profile);
+            team[i] = m;
+          }
+      }
       changeTeams(
         imported.map((members, i) => ({
           name: i === 0 ? 'Equipo Aurora' : 'Equipo Eclipse',
           slots: [...members, ...Array(6 - members.length).fill(null)],
         })),
       );
-      setGen(9);
+      setGen(profile);
       setSelected([]);
       setMessage(
         'Ejemplo cargado: sol frente a lluvia. Selecciona un Pokémon de cada equipo para comparar.',
@@ -532,7 +557,10 @@ export default function App() {
                                   <div className="card-moves">
                                     {m.moves.map((move, n) => (
                                       <span className={!move ? 'unused' : ''} key={n}>
-                                        {move || '—'}
+                                        <span className="card-move-name">{move || '—'}</span>
+                                        {moveInfo(move, gen) && (
+                                          <MoveType type={moveInfo(move, gen)!.type} />
+                                        )}
                                       </span>
                                     ))}
                                   </div>
