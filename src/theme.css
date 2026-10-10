@@ -264,6 +264,27 @@ textarea:focus-visible {
   background: var(--soft);
   border-color: var(--line);
 }
+.card-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  z-index: 2;
+  cursor: pointer;
+}
+.card-select:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+.card-select:disabled {
+  cursor: wait;
+}
+.pokemon-card .name-button,
+.pokemon-card .empty-content {
+  position: relative;
+  z-index: 3;
+}
 .pokemon-card.selected {
   background: var(--soft);
   border-color: var(--primary);
@@ -545,6 +566,24 @@ textarea:focus-visible {
 }
 .boosts strong {
   color: var(--ink);
+}
+.mega-control {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.mega-control .check-line {
+  color: var(--primary);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.mega-control p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.6;
 }
 .damage-move {
   background: var(--paper);

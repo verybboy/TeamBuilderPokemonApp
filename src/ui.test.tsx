@@ -3,7 +3,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { Pokemon } from '@smogon/calc';
 import App from './App';
-import { createMember, emptyTeams, type PokemonData, type Member } from './model';
+import { createMember, emptyTeams, type PokemonData, type Member, type Gen } from './model';
+import Calculator from './Calculator';
 import { loadPokemon, loadItemSprite } from './api';
 import { Sprite } from './components';
 import { LIBRARY_KEY, addConfiguration } from './library';
@@ -27,8 +28,8 @@ function fixture(name: string): PokemonData {
         : name === 'Garchomp'
           ? ['Earthquake', 'Dragon Claw', 'Rock Slide', 'Protect']
           : ['Thunderbolt', 'Quick Attack', 'Protect', 'Thunder'],
-    sprite: 'https://example.com/sprite.png',
-    shinySprite: 'https://example.com/shiny.png',
+    sprite: `https://example.com/${name}.png`,
+    shinySprite: `https://example.com/${name}-shiny.png`,
     genders: ['M', 'F'],
   };
 }
@@ -44,6 +45,13 @@ const KEY = 'pokemon-team-lab:v1';
 function member(name: string): Member {
   const m = createMember(fixture(name));
   m.moves = [...m.data.moves];
+  return m;
+}
+function charizard(stone: string): Member {
+  const m = member('Charizard');
+  m.item = stone;
+  m.moves = ['Flamethrower', 'Dragon Claw', 'Protect', 'Air Slash'];
+  m.data.moves = [...m.moves];
   return m;
 }
 function saved() {
@@ -70,6 +78,10 @@ beforeEach(() => {
     },
   });
   vi.stubGlobal('scrollTo', vi.fn());
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: vi.fn(async () => {}) },
+  });
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
     value: vi.fn(() => 'blob:configuration'),
@@ -150,9 +162,9 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
   it('borra todos los Pokémon seleccionados de ambos equipos e ignora las plazas vacías', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 2:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar plaza 6 de equipo 2' }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar plaza 6 de equipo 2' }));
     const button = screen.getByRole('button', { name: 'Borrar' });
     expect((button as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(button);
@@ -196,9 +208,23 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.getByRole('columnheader', { name: /Reparto EVs/ })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'Naturaleza' })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'Movimientos' })).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Tiburón ofensivo .txt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar Tiburón ofensivo' }));
+    const exportDialog = screen.getByRole('dialog', { name: 'Exportar a Showdown' });
+    const text = (
+      within(exportDialog).getByRole('textbox', {
+        name: 'Texto de Showdown',
+      }) as HTMLTextAreaElement
+    ).value;
+    expect(text).toContain('Garchomp');
+    expect(text).toContain('Level: 50');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Copiar configuración' }));
+    await within(exportDialog).findByRole('button', { name: 'Copiado' });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Descargar .txt' }));
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(exportDialog).getByRole('button', { name: 'Cerrar ventana' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Equipo de destino' }), {
       target: { value: '1' },
     });
@@ -247,7 +273,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
   it('guarda el Pokémon seleccionado sin descargar archivos', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar configuración' }));
     expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).entries).toHaveLength(1);
     expect(URL.createObjectURL).not.toHaveBeenCalled();
@@ -310,6 +336,138 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.queryByRole('img', { name: /Objeto equipado/ })).toBeNull();
   });
 });
+describe('Tarjetas, exportación general y megaevolución', () => {
+  it('selecciona y deselecciona al pulsar la tarjeta, pero el nombre solo edita', () => {
+    saved();
+    render(<App />);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/Tu estrategia empieza/)).toBeNull();
+    expect(screen.queryByText('Cada detalle cuenta.')).toBeNull();
+    const selection = screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ });
+    const card = selection.closest('article')!;
+    fireEvent.click(within(card).getByRole('img', { name: 'Garchomp' }));
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    expect(screen.getByRole('dialog', { name: 'Editar Pokémon' })).toBeDefined();
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(within(card).getByText('Earthquake'));
+    expect(selection.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Garchomp' }));
+    expect(selection.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar ventana' }));
+    fireEvent.click(selection);
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+  });
+  it('exporta una configuración Champions y mantiene el texto disponible si falla copiar', async () => {
+    const m = member('Torkoal');
+    m.evs.hp = 32;
+    m.evs.spa = 32;
+    m.evs.spd = 2;
+    const library = addConfiguration([], m, 0, 'Sol');
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: library.entries }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar Sol' }));
+    const dialog = screen.getByRole('dialog', { name: 'Exportar a Showdown' });
+    const text = within(dialog).getByRole('textbox', {
+      name: 'Texto de Showdown',
+    }) as HTMLTextAreaElement;
+    expect(text.value).toContain('EVs: 32 HP / 32 SpA / 2 SpD');
+    expect(text.readOnly).toBe(true);
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Copiar configuración' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('manualmente');
+    expect(text.value).toContain('Torkoal');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+  it.each([
+    {
+      gen: 0 as Gen,
+      stone: 'Charizardite X',
+      form: 'Charizard-Mega-X',
+      ability: 'Tough Claws',
+      stat: 150,
+    },
+    {
+      gen: 9 as Gen,
+      stone: 'Charizardite Y',
+      form: 'Charizard-Mega-Y',
+      ability: 'Drought',
+      stat: 179,
+    },
+  ])(
+    'activa $form en perfil $gen, actualiza sprite, estadísticas y daño y conserva el equipo',
+    async ({ gen, stone, form, ability, stat }) => {
+      const teams = emptyTeams();
+      teams[0].slots[0] = charizard(stone);
+      teams[1].slots[0] = member('Garchomp');
+      localStorage.setItem(KEY, JSON.stringify({ version: 1, gen, teams }));
+      const before = localStorage.getItem(KEY);
+      render(<App />);
+      expect(
+        (screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value,
+      ).toBe(String(gen));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
+      const region = screen.getByRole('region', { name: 'Pokémon de equipo 1' });
+      const beforeDamage = within(region).getByRole('button', {
+        name: /^Flamethrower/,
+      }).textContent;
+      const toggle = within(region).getByRole('checkbox', {
+        name: 'Megaevolucionar Charizard (equipo 1)',
+      });
+      fireEvent.click(toggle);
+      const image = await within(region).findByRole('img', { name: form });
+      expect(image.getAttribute('src')).toBe(`https://example.com/${form}.png`);
+      expect(within(region).getByText(ability)).toBeDefined();
+      const statInput = within(region).getByRole('combobox', { name: `At. Esp. ${form}` });
+      expect(statInput.closest('label')?.querySelector('strong')?.textContent).toBe(String(stat));
+      expect(within(region).getByRole('button', { name: /^Flamethrower/ }).textContent).not.toBe(
+        beforeDamage,
+      );
+      fireEvent.click(toggle);
+      expect(within(region).getByRole('img', { name: 'Charizard' })).toBeDefined();
+      expect(within(region).getByRole('button', { name: /^Flamethrower/ }).textContent).toBe(
+        beforeDamage,
+      );
+      expect(localStorage.getItem(KEY)).toBe(before);
+    },
+  );
+  it('no ofrece megaevolución con una piedra incompatible o en generaciones anteriores', () => {
+    const m = charizard('Garchompite');
+    const view = render(<Calculator members={[m, member('Pikachu')]} gen={9} onClose={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: /Megaevolucionar/ })).toBeNull();
+    view.unmount();
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={5}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: /Megaevolucionar/ })).toBeNull();
+  });
+  it('mantiene las estadísticas mega ante un error de imagen y permite reintentar', async () => {
+    vi.mocked(loadPokemon).mockRejectedValueOnce(new Error('network'));
+    render(
+      <Calculator
+        members={[charizard('Charizardite X'), member('Pikachu')]}
+        gen={9}
+        onClose={() => {}}
+      />,
+    );
+    const toggle = screen.getByRole('checkbox', { name: 'Megaevolucionar Charizard (equipo 1)' });
+    fireEvent.click(toggle);
+    await screen.findByText(/No se pudo cargar la imagen mega/);
+    expect(screen.getByRole('combobox', { name: 'Ataque Charizard-Mega-X' })).toBeDefined();
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    await screen.findByRole('img', { name: 'Charizard-Mega-X' });
+    expect(screen.queryByText(/No se pudo cargar la imagen mega/)).toBeNull();
+  });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -318,14 +476,14 @@ afterEach(() => {
 describe('Flujos completos de interfaz', () => {
   it('muestra doce plazas y exige una selección para las acciones', () => {
     render(<App />);
-    expect(screen.getAllByRole('checkbox')).toHaveLength(12);
+    expect(screen.getAllByRole('button', { name: /Seleccionar plaza/ })).toHaveLength(12);
     expect(
       (screen.getByRole('button', { name: 'Añadir / editar' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
       (screen.getByRole('button', { name: 'Enfrentar Pokémon' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar plaza 1 de equipo 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar plaza 1 de equipo 1' }));
     expect(
       (screen.getByRole('button', { name: 'Añadir / editar' }) as HTMLButtonElement).disabled,
     ).toBe(false);
@@ -397,13 +555,13 @@ describe('Flujos completos de interfaz', () => {
   it('exige equipos distintos y abre un cálculo bidireccional con cuatro movimientos', async () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 2 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 2 de equipo 1:/ }));
     expect(
       (screen.getByRole('button', { name: 'Enfrentar Pokémon' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 2 de equipo 1:/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 2:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 2 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 2:/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Enfrentar Pokémon' }));
     const dialog = screen.getByRole('dialog', { name: 'Calculadora de daño' });
     fireEvent.click(within(dialog).getByRole('button', { name: /^Heat Wave/ }));
@@ -418,7 +576,7 @@ describe('Flujos completos de interfaz', () => {
   it('permite cancelar el borrado y liberar únicamente la plaza elegida', () => {
     saved();
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();

@@ -1,7 +1,7 @@
 import { useState, useRef, type ChangeEvent } from 'react';
 import {
   Search,
-  Download,
+  ArrowUpFromLine,
   Plus,
   FolderHeart,
   Upload,
@@ -9,9 +9,10 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
-import { Sprite, Types, Modal, errorText } from './components';
+import { Sprite, Types, Modal, ShowdownExport, errorText } from './components';
 import { mechanicsLabel, natureLabel, stats, trainingLimits, type Gen, type Team } from './model';
-import { downloadConfiguration, type SavedConfiguration } from './library';
+import { configurationFilename, type SavedConfiguration } from './library';
+import { exportShowdown } from './showdown';
 export default function Library({
   entries,
   teams,
@@ -41,6 +42,7 @@ export default function Library({
     [error, setError] = useState(''),
     [renaming, setRenaming] = useState<SavedConfiguration | null>(null),
     [deleting, setDeleting] = useState<SavedConfiguration | null>(null),
+    [exporting, setExporting] = useState<SavedConfiguration | null>(null),
     [name, setName] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const visible = entries.filter((entry) =>
@@ -233,11 +235,11 @@ export default function Library({
                         </button>
                         <button
                           className="button secondary compact"
-                          aria-label={`Descargar ${entry.name} .txt`}
-                          onClick={() => downloadConfiguration(entry)}
+                          aria-label={`Exportar ${entry.name}`}
+                          onClick={() => setExporting(entry)}
                         >
-                          <Download size={14} />
-                          .txt
+                          <ArrowUpFromLine size={14} />
+                          Exportar
                         </button>
                         <button
                           className="icon-button"
@@ -280,6 +282,19 @@ export default function Library({
               : 'En el editor, pulsa «Guardar configuración». También puedes guardar un Pokémon seleccionado o importar un archivo Showdown.'}
           </p>
         </div>
+      )}
+      {exporting && (
+        <Modal
+          title="Exportar a Showdown"
+          subtitle={`${exporting.name} · ${mechanicsLabel(exporting.gen)}`}
+          onClose={() => setExporting(null)}
+        >
+          <ShowdownExport
+            text={exportShowdown([exporting.member], exporting.gen)}
+            filename={configurationFilename(exporting)}
+            copyLabel="Copiar configuración"
+          />
+        </Modal>
       )}
       {renaming && (
         <Modal title="Renombrar configuración" onClose={() => setRenaming(null)}>

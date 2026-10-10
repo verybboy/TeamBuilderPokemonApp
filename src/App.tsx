@@ -79,7 +79,7 @@ export default function App() {
     [view, setView] = useState<'teams' | 'library'>('teams'),
     [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
-    [gen, setGen] = useState<Gen>(initial.saved?.gen || 9),
+    [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 9),
     [selected, setSelected] = useState<Slot[]>([]),
     [editor, setEditor] = useState<Slot | null>(null),
     [transfer, setTransfer] = useState<{ mode: 'import' | 'export'; team: number } | null>(null),
@@ -329,14 +329,6 @@ export default function App() {
             <ArrowUpRight size={15} />
           </button>
         </nav>
-        <div className="sidebar-tip">
-          <span className="tip-icon">
-            <Sparkles size={19} />
-          </span>
-          <h3>Cada detalle cuenta.</h3>
-          <p>Un movimiento. Un objeto. Una ventaja para tu próximo combate.</p>
-          <div className="tip-line" />
-        </div>
         <div className="sidebar-bottom">
           <span className="local-dot" />
           <span>Local. Privado. Tu equipo.</span>
@@ -396,36 +388,6 @@ export default function App() {
             </>
           ) : (
             <>
-              <section className="page-intro">
-                <div>
-                  <p className="eyebrow">
-                    <span /> CONSTRUYE. COMPARA. COMPITE.
-                  </p>
-                  <h1>
-                    Tu estrategia empieza
-                    <br />
-                    con un <em>buen equipo.</em>
-                  </h1>
-                  <p className="intro-description">
-                    Prepara tus Pokémon, afina sus características y encuentra
-                    <br className="desktop-break" /> la ventaja en cada enfrentamiento.
-                  </p>
-                </div>
-                <div className="intro-counter">
-                  <div className="counter-orbit">
-                    <span className="orbit-dot" />
-                    <Swords size={33} strokeWidth={1.5} />
-                  </div>
-                  <p>
-                    <strong>{String(count).padStart(2, '0')}</strong>
-                    <span>
-                      / 12
-                      <br />
-                      POKÉMON
-                    </span>
-                  </p>
-                </div>
-              </section>
               <div className="workspace-toolbar">
                 <div className="workspace-tabs">
                   <span className="workspace-tab">
@@ -524,17 +486,17 @@ export default function App() {
                           <article
                             key={i}
                             className={`pokemon-card ${m ? 'filled' : 'empty'} ${chosen ? 'selected' : ''}`}
+                            onClick={(e) => {
+                              if (!busy && !(e.target as Element).closest('button')) toggle(t, i);
+                            }}
                           >
-                            <label className="slot-check">
-                              <input
-                                type="checkbox"
-                                disabled={busy}
-                                checked={chosen}
-                                onChange={() => toggle(t, i)}
-                                aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
-                              />
-                              <span>{chosen ? <Check size={12} /> : null}</span>
-                            </label>
+                            <button
+                              className="card-select"
+                              disabled={busy}
+                              aria-pressed={chosen}
+                              onClick={() => toggle(t, i)}
+                              aria-label={`Seleccionar plaza ${i + 1} de equipo ${t + 1}${m ? `: ${m.data.name}` : ''}`}
+                            />
                             <span className="slot-number">{String(i + 1).padStart(2, '0')}</span>
                             {m ? (
                               <>
@@ -575,14 +537,6 @@ export default function App() {
                                     ))}
                                   </div>
                                 </div>
-                                <button
-                                  className="card-edit icon-button"
-                                  disabled={busy}
-                                  aria-label={`Editar ${m.data.name}`}
-                                  onClick={() => setEditor({ team: t, slot: i })}
-                                >
-                                  <Pencil size={15} />
-                                </button>
                               </>
                             ) : (
                               <button

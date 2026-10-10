@@ -73,9 +73,6 @@ export function downloadText(text: string, filename: string) {
   // Keep the object URL alive until the browser has started the download.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function downloadConfiguration(entry: SavedConfiguration) {
-  downloadText(
-    exportShowdown([entry.member], entry.gen),
-    `${id(entry.name) || 'pokemon'}-${entry.gen === 0 ? 'champions' : `gen${entry.gen}`}.txt`,
-  );
+export function configurationFilename(entry: SavedConfiguration) {
+  return `${id(entry.name) || 'pokemon'}-${entry.gen === 0 ? 'champions' : `gen${entry.gen}`}.txt`;
 }

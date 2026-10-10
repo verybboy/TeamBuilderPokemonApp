@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowRightLeft, Swords, Wind, Sun, Leaf } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowRightLeft, Swords, Wind, Sun, Leaf, LoaderCircle } from 'lucide-react';
 import { Modal, Sprite, Types, NatureIndicator, errorText } from './components';
 import { attackOrder, damageFor, type BattleSettings, type SideSettings } from './battle';
 import {
@@ -12,9 +12,13 @@ import {
   apiGeneration,
   mechanicsLabel,
   natureLabel,
+  megaForm,
+  megaEvolve,
   type Gen,
   type Member,
+  type PokemonData,
 } from './model';
+import { loadPokemon } from './api';
 const statuses = [
   ['', 'Sin estado'],
   ['brn', 'Quemado'],
@@ -34,6 +38,48 @@ export default function Calculator({
   onClose: () => void;
 }) {
   const era = apiGeneration(gen);
+  const formNames = members.map((member) => megaForm(member, gen));
+  const [megaEnabled, setMegaEnabled] = useState<[boolean, boolean]>([false, false]);
+  const [megaImages, setMegaImages] = useState<
+    Record<string, Pick<PokemonData, 'sprite' | 'shinySprite'>>
+  >({});
+  const [imageLoading, setImageLoading] = useState<Record<string, boolean>>({});
+  const [imageErrors, setImageErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    formNames.forEach((name, i) => {
+      if (!name || !megaEnabled[i]) return;
+      const key = `${gen}:${name}`;
+      if (megaImages[key]) return;
+      setImageLoading((value) => ({ ...value, [key]: true }));
+      setImageErrors((value) => ({ ...value, [key]: '' }));
+      void loadPokemon(name, gen)
+        .then(
+          (data) => {
+            if (active) setMegaImages((value) => ({ ...value, [key]: data }));
+          },
+          () => {
+            if (active)
+              setImageErrors((value) => ({
+                ...value,
+                [key]:
+                  'No se pudo cargar la imagen mega. Desactiva y vuelve a activar para reintentar.',
+              }));
+          },
+        )
+        .finally(() => {
+          if (active) setImageLoading((value) => ({ ...value, [key]: false }));
+        });
+    });
+    return () => {
+      active = false;
+    };
+  }, [gen, formNames[0], formNames[1], megaEnabled[0], megaEnabled[1]]);
+  const battleMembers = members.map((member, i) =>
+    megaEnabled[i] && formNames[i]
+      ? megaEvolve(member, gen, megaImages[`${gen}:${formNames[i]}`])
+      : member,
+  ) as [Member, Member];
   const side = (m: Member): SideSettings => ({
     reflect: false,
     lightScreen: false,
@@ -63,11 +109,19 @@ export default function Calculator({
       return { ...s, sides };
     });
   }
-  const results = members.map((m, i) =>
+  const results = battleMembers.map((m, i) =>
     m.moves.map((move, j) => {
       try {
         return {
-          result: damageFor(members[0], members[1], gen, settings, move, crits[i][j], i === 1),
+          result: damageFor(
+            battleMembers[0],
+            battleMembers[1],
+            gen,
+            settings,
+            move,
+            crits[i][j],
+            i === 1,
+          ),
           error: '',
         };
       } catch (e) {
@@ -78,9 +132,9 @@ export default function Calculator({
   let order: ReturnType<typeof attackOrder> | null = null,
     orderError = '';
   try {
-    order = attackOrder(members[0], members[1], gen, settings, [
-      members[0].moves[selected[0]],
-      members[1].moves[selected[1]],
+    order = attackOrder(battleMembers[0], battleMembers[1], gen, settings, [
+      battleMembers[0].moves[selected[0]],
+      battleMembers[1].moves[selected[1]],
     ]);
   } catch (e) {
     orderError = errorText(e);
@@ -93,11 +147,11 @@ export default function Calculator({
     ...(era >= 3 ? [[era >= 9 ? 'Snow' : 'Hail', era >= 9 ? 'Nevada' : 'Granizo']] : []),
   ];
   function fighter(i: number) {
-    const m = members[i],
+    const m = battleMembers[i],
       s = settings.sides[i],
       p = calcPokemon(m, gen, s.boosts, s.status);
     return (
-      <section className={`combatant combatant-${i}`}>
+      <section className={`combatant combatant-${i}`} aria-label={`Pokémon de equipo ${i + 1}`}>
         <div className="combatant-top">
           <Sprite member={m} />
           <div>
@@ -108,6 +162,37 @@ export default function Calculator({
             <Types types={p.types.map((t) => t.toLowerCase())} />
           </div>
         </div>
+        {formNames[i] && (
+          <div className="mega-control">
+            <label className="check-line">
+              <input
+                type="checkbox"
+                checked={megaEnabled[i]}
+                aria-label={`Megaevolucionar ${members[i].data.name} (equipo ${i + 1})`}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setMegaEnabled((value) => (i === 0 ? [enabled, value[1]] : [value[0], enabled]));
+                  const pokemon = enabled ? megaEvolve(members[i], gen) : members[i];
+                  updateSide(i, { abilityOn: side(pokemon).abilityOn });
+                }}
+              />
+              Megaevolucionar
+            </label>
+            <span className="small muted">
+              {formNames[i]} · {members[i].item}
+            </span>
+            {megaEnabled[i] && imageLoading[`${gen}:${formNames[i]}`] && (
+              <p className="small muted">
+                <LoaderCircle size={14} className="spin" /> Cargando imagen mega…
+              </p>
+            )}
+            {megaEnabled[i] && imageErrors[`${gen}:${formNames[i]}`] && (
+              <p className="small error" role="status">
+                {imageErrors[`${gen}:${formNames[i]}`]}
+              </p>
+            )}
+          </div>
+        )}
         <dl className="battle-meta">
           <div>
             <dt>Habilidad</dt>
@@ -371,12 +456,12 @@ export default function Calculator({
         )}
       </div>
       <div className="result-details">
-        {members.map((m, i) => {
+        {battleMembers.map((m, i) => {
           const r = results[i][selected[i]]?.result;
           return (
             <section key={i}>
               <p className="eyebrow">
-                {m.data.name} → {members[1 - i].data.name}
+                {m.data.name} → {battleMembers[1 - i].data.name}
               </p>
               {r ? (
                 <>
