@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Pokemon } from '@smogon/calc';
 import { createMember, emptyTeams, spread, type Gen, type PokemonData } from './model';
 import { addTeamConfiguration, restoreTeamLibrary, alphabetical } from './library';
-import { defensiveCoverage } from './coverage';
+import { coverageTeam, defensiveCoverage } from './coverage';
 import { damageFor, fieldFor, type BattleSettings } from './battle';
 
 function member(name: string, gen: Gen = 9) {
@@ -84,6 +84,41 @@ describe('Equipos guardados', () => {
   });
 });
 describe('Cobertura por tipos', () => {
+  it.each([0, 9] as Gen[])(
+    'usa los tipos de Charizard X/Y por piedra en el perfil %s sin modificar el equipo',
+    (gen) => {
+      const team = emptyTeams()[0];
+      team.slots[0] = member('Charizard', gen);
+      team.slots[0].item = 'Charizardite X';
+      const original = structuredClone(team),
+        base = defensiveCoverage(team, gen);
+      const preview = coverageTeam(team, gen, [true]);
+      expect(preview.slots[0]?.data.types).toEqual(['fire', 'dragon']);
+      expect(defensiveCoverage(preview, gen).find((r) => r.type === 'ground')).toMatchObject({
+        multipliers: [2, null, null, null, null, null],
+        weak: 1,
+        resist: 0,
+      });
+      expect(defensiveCoverage(preview, gen).find((r) => r.type === 'electric')).toMatchObject({
+        multipliers: [0.5, null, null, null, null, null],
+        weak: 0,
+        resist: 1,
+      });
+      expect(team).toEqual(original);
+      expect(defensiveCoverage(coverageTeam(team, gen, [false]), gen)).toEqual(base);
+      team.slots[0].item = 'Charizardite Y';
+      expect(coverageTeam(team, gen, [true]).slots[0]?.data.name).toBe('Charizard-Mega-Y');
+      expect(defensiveCoverage(coverageTeam(team, gen, [true]), gen)).toEqual(base);
+    },
+  );
+  it('ignora selecciones mega con piedra incompatible, plaza vacía o perfil antiguo', () => {
+    const team = emptyTeams()[0];
+    team.slots[0] = member('Charizard');
+    team.slots[0].item = 'Garchompite';
+    expect(coverageTeam(team, 9, [true, true])).toEqual(team);
+    team.slots[0].item = 'Charizardite X';
+    expect(coverageTeam(team, 5, [true])).toEqual(team);
+  });
   it('cuenta debilidades, resistencias e inmunidades sin incluir plazas vacías', () => {
     const team = emptyTeams()[0];
     team.slots[0] = member('Charizard');

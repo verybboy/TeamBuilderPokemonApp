@@ -1,4 +1,5 @@
 import { generations, id, apiGeneration, type Gen, type PokemonData, type Spread } from './model';
+import { API_CACHE_PREFIX, cacheApiResponse } from './storage';
 const API = 'https://pokeapi.co/api/v2/';
 const memory = new Map<string, unknown>();
 const pending = new Map<string, Promise<unknown>>();
@@ -13,7 +14,7 @@ class ApiError extends Error {
 export async function request<T>(path: string): Promise<T> {
   if (memory.has(path)) return memory.get(path) as T;
   try {
-    const cached = localStorage.getItem('ptl-api:' + path);
+    const cached = localStorage.getItem(API_CACHE_PREFIX + path);
     if (cached) {
       const c = JSON.parse(cached);
       if (Date.now() - c.time < 7 * 86400000) {
@@ -36,9 +37,7 @@ export async function request<T>(path: string): Promise<T> {
       );
     const data = await response.json();
     memory.set(path, data);
-    try {
-      localStorage.setItem('ptl-api:' + path, JSON.stringify({ time: Date.now(), data }));
-    } catch {}
+    cacheApiResponse(path, data);
     return data;
   })();
   pending.set(path, p);

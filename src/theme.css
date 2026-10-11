@@ -1,4 +1,5 @@
 /* Pokémon palette: Poké Ball red, ocean blue and Pikachu yellow. */
+/* Editable controls and save feedback are styled at the end to cover all app forms. */
 :root {
   color-scheme: light;
   --bg: #f2f6ff;
@@ -15,6 +16,8 @@
   --positive: #159447;
   --negative: #d82c45;
   --shadow: #143b7312;
+  --editable-bg: #f2f7ff;
+  --editable-border: #abc6ef;
   color: var(--ink);
   background: var(--bg);
 }
@@ -33,6 +36,8 @@
   --positive: #5bed95;
   --negative: #ff7186;
   --shadow: #00000035;
+  --editable-bg: #2b4060;
+  --editable-border: #587bab;
 }
 body,
 .main-shell {
@@ -969,5 +974,74 @@ textarea:focus-visible {
   }
   .selection-actions .primary {
     flex-basis: 45%;
+  }
+}
+
+/* Brighter editable surfaces, including team names, search and move pickers. */
+input:not([type='checkbox']):not([type='radio']):not([type='file']):not(:disabled):not([readonly]),
+select:not(:disabled):not([readonly]),
+textarea:not(:disabled):not([readonly]) {
+  background: var(--editable-bg);
+  border-color: var(--editable-border);
+  color: var(--ink);
+}
+input:not([type='checkbox']):not([type='radio']):not([type='file']):not(:disabled):not(
+    [readonly]
+  ):focus-visible,
+select:not(:disabled):not([readonly]):focus-visible,
+textarea:not(:disabled):not([readonly]):focus-visible {
+  border-color: var(--primary);
+}
+.save-toast {
+  position: fixed;
+  bottom: 104px;
+  right: 24px;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--positive);
+  border-left: 5px solid var(--positive);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.save-toast > svg {
+  color: var(--positive);
+  margin-top: 1px;
+}
+.save-toast strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+.save-toast p {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.save-toast > div {
+  flex: 1;
+  min-width: 0;
+}
+.save-toast .icon-button {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+}
+.save-toast.failure {
+  border-color: var(--negative);
+}
+.save-toast.failure > svg {
+  color: var(--negative);
+}
+@media (max-width: 780px) {
+  .save-toast {
+    bottom: 160px;
+    right: 16px;
   }
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react';
 import { Pokemon } from '@smogon/calc';
 import App from './App';
 import { createMember, emptyTeams, type PokemonData, type Member, type Gen } from './model';
@@ -138,6 +138,47 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     expect(screen.getByRole('alert').textContent).toContain('No se pudo guardar');
     expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(original);
     expect(screen.getByRole('dialog')).toBeDefined();
+  });
+  it('guarda el sexto equipo liberando caché si el navegador está casi lleno', () => {
+    saved();
+    const previous = Array.from({ length: 5 }, (_, i) => teamEntry(`Equipo guardado ${i + 1}`));
+    storeTeams(previous);
+    localStorage.setItem(
+      'ptl-api:pokemon/old',
+      JSON.stringify({ time: 1, data: 'x'.repeat(12000) }),
+    );
+    render(<App />);
+    const usage = () => {
+      let size = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)!;
+        size += (key.length + localStorage.getItem(key)!.length) * 2;
+      }
+      return size;
+    };
+    const limit = usage() + 100,
+      actual = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      const old = this.getItem(key);
+      const next =
+        usage() -
+        (old === null ? 0 : (key.length + old.length) * 2) +
+        (key.length + value.length) * 2;
+      if (next > limit) throw new DOMException('Quota', 'QuotaExceededError');
+      return actual.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del equipo guardado' }), {
+      target: { value: 'Sexto equipo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar equipo' }));
+    const entries = JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries;
+    expect(entries).toHaveLength(6);
+    expect(entries[0].name).toBe('Sexto equipo');
+    expect(entries.slice(1)).toEqual(previous);
+    expect(localStorage.getItem('ptl-api:pokemon/old')).toBeNull();
+    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].data.name).toBe('Garchomp');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
   it('no sobrescribe una biblioteca de equipos corrupta al abrir o cambiar de pestaña', () => {
     localStorage.setItem(TEAM_LIBRARY_KEY, 'corrupt');
@@ -347,6 +388,54 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
   });
 });
 describe('Champions, naturalezas, tema y configuraciones', () => {
+  it('confirma el guardado desde la barra inferior, permite cerrarlo y renueva el aviso al repetir', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    vi.useFakeTimers();
+    try {
+      const save = screen.getByRole('button', { name: 'Guardar configuración' });
+      fireEvent.click(save);
+      expect(screen.getByRole('status').textContent).toContain(
+        'se ha guardado correctamente en Mis Pokémon',
+      );
+      expect(screen.getByRole('status').textContent).toContain('Garchomp');
+      expect(screen.getByRole('status').className).toContain('save-toast success');
+      expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).entries).toHaveLength(1);
+      expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+      fireEvent.click(save);
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.getByRole('status')).toBeDefined();
+      expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).entries).toHaveLength(1);
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.queryByRole('status')).toBeNull();
+      fireEvent.click(save);
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar aviso de guardado' }));
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('muestra un error visible en vez de confirmar el guardado cuando falla la biblioteca', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota', 'QuotaExceededError');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar configuración' }));
+    expect(screen.getByRole('alert').textContent).toContain('No se ha podido guardar');
+    expect(screen.getByRole('alert').className).toContain('save-toast failure');
+    expect(screen.queryByText('Configuración guardada')).toBeNull();
+    expect(localStorage.getItem(LIBRARY_KEY)).toBeNull();
+  });
   it('activa Champions y limita el editor a 32 SP / 66 con nivel e IVs fijos', async () => {
     render(<App />);
     fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {

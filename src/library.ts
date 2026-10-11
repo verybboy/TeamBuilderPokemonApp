@@ -1,5 +1,6 @@
 import { validateMember, id, type Gen, type Member, type Team } from './model';
 import { exportShowdown } from './showdown';
+import { writeSavedData } from './storage';
 export const LIBRARY_KEY = 'pokemon-team-lab:configurations:v1';
 export interface SavedConfiguration {
   id: string;
@@ -62,7 +63,7 @@ export function addConfiguration(
   return { entries: [entry, ...entries], entry };
 }
 export function persistLibrary(entries: SavedConfiguration[]) {
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
+  writeSavedData(LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
 }
 export function downloadText(text: string, filename: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -156,7 +157,7 @@ export function addTeamConfiguration(
   return { entries: [entry, ...entries], entry };
 }
 export function persistTeamLibrary(entries: SavedTeamConfiguration[]) {
-  localStorage.setItem(TEAM_LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
+  writeSavedData(TEAM_LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
 }
 export function alphabetical(a: string, b: string) {
   return a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true });

@@ -1,7 +1,17 @@
 import type { TypeName } from '@smogon/calc/dist/data/interface';
 import { toID } from '@smogon/calc';
-import { calcPokemon, generations, type Gen, type Team } from './model';
+import { calcPokemon, generations, megaForm, megaEvolve, type Gen, type Team } from './model';
 import { typeLabels } from './moves';
+
+/** Local coverage preview; the original team and its saved configurations stay intact. */
+export function coverageTeam(team: Team, gen: Gen, megaSlots: readonly boolean[]): Team {
+  return {
+    ...team,
+    slots: team.slots.map((member, i) =>
+      member && megaSlots[i] && megaForm(member, gen) ? megaEvolve(member, gen) : member,
+    ),
+  };
+}
 
 /** Type-chart coverage only: abilities, items and field effects are deliberately excluded. */
 export function defensiveCoverage(team: Team, gen: Gen) {
