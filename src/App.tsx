@@ -19,6 +19,9 @@ import {
   Moon,
   Sun,
   Save,
+  CircleCheck,
+  CircleAlert,
+  X,
 } from 'lucide-react';
 import {
   calcPokemon,
@@ -41,6 +44,7 @@ import DefensiveCoverage from './DefensiveCoverage';
 import { SaveTeamDialog, ClearTeamDialog } from './TeamDialogs';
 import { moveInfo } from './moves';
 import { MoveType } from './MovePicker';
+import { storageFailureMessage, writeSavedData } from './storage';
 import {
   LIBRARY_KEY,
   restoreLibrary,
@@ -112,23 +116,32 @@ export default function App() {
         : '',
     ),
     [storageError, setStorageError] = useState(''),
+    [saveFeedback, setSaveFeedback] = useState<{ text: string; success: boolean } | null>(null),
     [dirty, setDirty] = useState(false),
     [deleteSlots, setDeleteSlots] = useState<Slot[] | null>(null);
   useEffect(() => {
+    if (!saveFeedback?.success) return;
+    const timeout = window.setTimeout(() => setSaveFeedback(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [saveFeedback]);
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
-      localStorage.setItem('pokemon-team-lab:theme', theme);
+      writeSavedData('pokemon-team-lab:theme', theme);
     } catch {}
   }, [theme]);
   const occupiedSelection = selected.filter((slot) => teams[slot.team].slots[slot.slot]);
   useEffect(() => {
     if (!dirty) return;
     try {
-      localStorage.setItem(STORAGE, JSON.stringify({ version: 1, gen, teams }));
+      writeSavedData(STORAGE, JSON.stringify({ version: 1, gen, teams }));
       setStorageError('');
-    } catch {
+    } catch (error) {
       setStorageError(
-        'No se pudo guardar en este navegador. Exporta tus equipos para conservarlos.',
+        storageFailureMessage(
+          error,
+          'No se pudo guardar en este navegador. Exporta tus equipos para conservarlos.',
+        ),
       );
     }
   }, [teams, gen, dirty]);
@@ -154,17 +167,25 @@ export default function App() {
     const result = addConfiguration(configurations, member, gen, name);
     try {
       persistLibrary(result.entries);
-    } catch {
-      throw new Error('No se pudo guardar la configuración en este navegador.');
+    } catch (error) {
+      throw new Error(
+        storageFailureMessage(error, 'No se pudo guardar la configuración en este navegador.'),
+      );
     }
     setConfigurations(result.entries);
     setMessage(`${result.entry.name} guardada en tu biblioteca.`);
+    return result.entry;
   }
   function updateTeamLibrary(entries: SavedTeamConfiguration[]) {
     try {
       persistTeamLibrary(entries);
-    } catch {
-      throw new Error('No se pudo guardar la biblioteca de equipos en este navegador.');
+    } catch (error) {
+      throw new Error(
+        storageFailureMessage(
+          error,
+          'No se pudo guardar la biblioteca de equipos en este navegador.',
+        ),
+      );
     }
     setSavedTeams(entries);
   }
@@ -251,8 +272,10 @@ export default function App() {
         ).entries;
       try {
         persistLibrary(entries);
-      } catch {
-        throw new Error('No se pudo guardar la biblioteca en este navegador.');
+      } catch (error) {
+        throw new Error(
+          storageFailureMessage(error, 'No se pudo guardar la biblioteca en este navegador.'),
+        );
       }
       setConfigurations(entries);
       setMessage(`${members.length} configuraciones importadas en la biblioteca.`);
@@ -266,8 +289,8 @@ export default function App() {
     );
     try {
       persistLibrary(next);
-    } catch {
-      throw new Error('No se pudo guardar el nombre.');
+    } catch (error) {
+      throw new Error(storageFailureMessage(error, 'No se pudo guardar el nombre.'));
     }
     setConfigurations(next);
   }
@@ -282,8 +305,10 @@ export default function App() {
     const next = configurations.filter((value) => value.id !== entry.id);
     try {
       persistLibrary(next);
-    } catch {
-      throw new Error('No se pudo eliminar la configuración de este navegador.');
+    } catch (error) {
+      throw new Error(
+        storageFailureMessage(error, 'No se pudo eliminar la configuración de este navegador.'),
+      );
     }
     setConfigurations(next);
     setMessage(`${entry.name} eliminada de tu biblioteca.`);
@@ -741,10 +766,16 @@ export default function App() {
                     onClick={() => {
                       if (!single) return;
                       const member = teams[single.team].slots[single.slot]!;
+                      setMessage('');
                       try {
-                        saveConfiguration(member, '');
+                        const entry = saveConfiguration(member, '');
+                        setMessage('');
+                        setSaveFeedback({
+                          text: `«${entry.name}» se ha guardado correctamente en Mis Pokémon.`,
+                          success: true,
+                        });
                       } catch (e) {
-                        setMessage(errorText(e));
+                        setSaveFeedback({ text: errorText(e), success: false });
                       }
                     }}
                   >
@@ -790,6 +821,33 @@ export default function App() {
           )}
         </main>
       </div>
+      {saveFeedback && (
+        <div
+          className={`save-toast ${saveFeedback.success ? 'success' : 'failure'}`}
+          role={saveFeedback.success ? 'status' : 'alert'}
+          aria-live={saveFeedback.success ? 'polite' : 'assertive'}
+          aria-atomic="true"
+        >
+          {saveFeedback.success ? (
+            <CircleCheck size={23} aria-hidden="true" />
+          ) : (
+            <CircleAlert size={23} aria-hidden="true" />
+          )}
+          <div>
+            <strong>
+              {saveFeedback.success ? 'Configuración guardada' : 'No se ha podido guardar'}
+            </strong>
+            <p>{saveFeedback.text}</p>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Cerrar aviso de guardado"
+            onClick={() => setSaveFeedback(null)}
+          >
+            <X size={17} />
+          </button>
+        </div>
+      )}
       {editor && (
         <Editor
           key={`${editor.team}-${editor.slot}`}

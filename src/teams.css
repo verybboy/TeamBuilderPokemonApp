@@ -150,6 +150,45 @@
 .coverage-table .shiny-star {
   width: 10px;
 }
+.coverage-table thead .types {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  margin: 5px 0;
+}
+.coverage-table thead .type {
+  width: auto;
+  font-size: 8px;
+  padding: 2px 4px;
+}
+.coverage-table .coverage-mega-toggle {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 7px 0 2px;
+}
+.coverage-mega-toggle input {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--primary);
+}
+.coverage-image-loading {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: auto;
+  color: var(--primary);
+}
 .coverage-table tbody tr:nth-child(even) td:not(.coverage-total) {
   background: var(--soft);
 }
