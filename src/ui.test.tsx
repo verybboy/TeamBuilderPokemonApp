@@ -8,6 +8,13 @@ import Calculator from './Calculator';
 import { loadPokemon, loadItemSprite } from './api';
 import { Sprite } from './components';
 import { LIBRARY_KEY, TEAM_LIBRARY_KEY, addConfiguration, addTeamConfiguration } from './library';
+import {
+  createStorageBackup,
+  parseStorageBackup,
+  APP_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  type StorageBackup,
+} from './backup';
 function fixture(name: string): PokemonData {
   const p = new Pokemon(9, name);
   return {
@@ -88,6 +95,165 @@ beforeEach(() => {
   });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+});
+describe('Copia completa desde el menú lateral', () => {
+  function incoming() {
+    localStorage.clear();
+    const teams = emptyTeams();
+    teams[0].name = 'Importado Champions';
+    const m = member('Torkoal');
+    m.hpPercent = 37;
+    m.evs = { hp: 32, atk: 0, def: 0, spa: 32, spd: 2, spe: 0 };
+    teams[0].slots[4] = m;
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify({ version: 1, gen: 0, teams }));
+    localStorage.setItem(
+      LIBRARY_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: addConfiguration([], member('Pikachu'), 9, 'Ratón guardado').entries,
+      }),
+    );
+    localStorage.setItem(
+      TEAM_LIBRARY_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: addTeamConfiguration([], teams[0], 0, 'Sol guardado').entries,
+      }),
+    );
+    localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    localStorage.setItem(
+      'ptl-api:backup-ui',
+      JSON.stringify({ time: Date.now(), data: { name: 'cached' } }),
+    );
+    const backup = createStorageBackup();
+    localStorage.clear();
+    return backup;
+  }
+  async function selectBackup(backup: StorageBackup | string) {
+    const file = new File([''], 'team-lab.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', {
+      value: async () => (typeof backup === 'string' ? backup : JSON.stringify(backup)),
+    });
+    fireEvent.change(screen.getByLabelText('Importar copia de seguridad JSON'), {
+      target: { files: [file] },
+    });
+  }
+  it('exporta todos los datos de la app desde el menú sin incluir datos ajenos', async () => {
+    saved();
+    localStorage.setItem('unrelated-app', 'other');
+    localStorage.setItem('ptl-api:backup-export', JSON.stringify({ time: 1, data: { ok: 1 } }));
+    render(<App />);
+    const original = createStorageBackup().entries;
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar copia completa' }));
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+    expect(blob.type).toBe('application/json;charset=utf-8');
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsText(blob);
+    });
+    expect(parseStorageBackup(text).backup.entries).toEqual(original);
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    expect(
+      (vi.mocked(HTMLAnchorElement.prototype.click).mock.contexts[0] as HTMLAnchorElement).download,
+    ).toMatch(/^pokemon-team-lab-backup-.*\.json$/);
+    expect(screen.getByRole('status').textContent).toContain('exportada correctamente');
+    expect(localStorage.getItem('unrelated-app')).toBe('other');
+  });
+  it('revisa la copia, permite cancelar y restaura equipos, bibliotecas y tema sin recargar', async () => {
+    const backup = incoming();
+    saved();
+    localStorage.setItem('unrelated-app', 'other');
+    localStorage.setItem('pokemon-team-lab:old-setting', 'old');
+    render(<App />);
+    const original = createStorageBackup().entries;
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    await selectBackup(backup);
+    await screen.findByRole('dialog', { name: 'Restaurar copia de seguridad' });
+    expect(createStorageBackup().entries).toEqual(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(createStorageBackup().entries).toEqual(original);
+    await selectBackup(backup);
+    await screen.findByRole('dialog', { name: 'Restaurar copia de seguridad' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos y restaurar' }));
+    expect(screen.getByRole('status').textContent).toContain('restaurada correctamente');
+    expect(createStorageBackup().entries).toEqual(backup.entries);
+    expect(localStorage.getItem('unrelated-app')).toBe('other');
+    expect(localStorage.getItem('pokemon-team-lab:old-setting')).toBeNull();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect(
+      (screen.getByRole('textbox', { name: 'Nombre equipo 1' }) as HTMLInputElement).value,
+    ).toBe('Importado Champions');
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '0',
+    );
+    expect(screen.getByRole('button', { name: 'Torkoal' })).toBeDefined();
+    expect(JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!).teams[0].slots[4].hpPercent).toBe(37);
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    expect(screen.getByText('Ratón guardado')).toBeDefined();
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+    expect(screen.getByText('Sol guardado')).toBeDefined();
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+  });
+  it('rechaza un archivo inválido sin abrir confirmación ni modificar los datos', async () => {
+    saved();
+    render(<App />);
+    const before = createStorageBackup().entries;
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    await selectBackup('{}');
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(createStorageBackup().entries).toEqual(before);
+  });
+  it('conserva los datos y la interfaz si falla una escritura durante la restauración', async () => {
+    const backup = incoming();
+    saved();
+    render(<App />);
+    const previous = createStorageBackup().entries;
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    await selectBackup(backup);
+    await screen.findByRole('dialog');
+    const actual = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === THEME_STORAGE_KEY && value === 'dark')
+        throw new DOMException('Quota', 'QuotaExceededError');
+      return actual.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos y restaurar' }));
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Se han conservado los datos anteriores',
+    );
+    expect(createStorageBackup().entries).toEqual(previous);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+  });
+  it('mantiene una copia de recuperación disponible al cambiar de sección si el navegador bloquea deshacer', async () => {
+    const backup = incoming();
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    await selectBackup(backup);
+    await screen.findByRole('dialog');
+    let calls = 0;
+    const actual = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (++calls >= 2) throw new DOMException('Blocked', 'SecurityError');
+      return actual.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos y restaurar' }));
+    expect(screen.getByRole('button', { name: 'Descargar copia de recuperación' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar copia de recuperación' }));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+  });
 });
 describe('Biblioteca de equipos, limpieza y cobertura', () => {
   function teamEntry(name = 'Arena') {

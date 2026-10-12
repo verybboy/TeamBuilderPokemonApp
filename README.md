@@ -83,6 +83,14 @@ La conversión clásica → Champions usa `floor((EV + 4) / 8)`, establece nivel
 
 Las formas dependen de los recursos disponibles en PokéAPI y en la versión instalada del motor. Las formas sin movimientos para la generación elegida no se pueden guardar. La aplicación muestra errores de red y de almacenamiento y no sobrescribe un guardado corrupto al iniciarse. Exporta una copia antes de eliminar datos del navegador.
 
+## Copia de seguridad completa
+
+- Abre **Copia de seguridad** en el menú lateral (también disponible en móvil) y pulsa **Exportar copia completa**. Descarga un `.json` con todas las claves locales de la app: constructor, Mis equipos, Mis Pokémon, perfiles, PS actuales, preferencias, caché de PokéAPI y otras claves propias. No incluye datos de otras aplicaciones del mismo origen. Se leen los valores actuales del navegador al exportar; no se necesita conexión ni cuenta.
+- **Importar copia completa** acepta ese formato `.json` hasta 20 MB. Comprueba formato/versión, claves únicas y propias, tema, equipos, bibliotecas y datos de Pokémon antes de modificar nada. Después muestra el archivo, fecha, cantidades y tamaño aproximado. **Cancelar** conserva el estado actual; **Reemplazar datos y restaurar** confirma la sustitución completa. Puedes descargar una copia actual desde esa revisión.
+- La restauración conserva exactamente los registros importados, incluyendo nombres, ID, plazas vacías, perfiles y porcentaje de PS. El constructor, bibliotecas y tema se actualizan sin recargar. Los registros propios ausentes en el archivo se eliminan; los datos ajenos quedan intactos. Los `.txt` de Showdown se siguen importando desde sus apartados habituales.
+- Si una escritura falla (por cuota o bloqueo), se intenta recuperar íntegramente el almacenamiento anterior. Si el navegador bloquea también esa recuperación, se mantiene una copia del estado previo en memoria con el botón **Descargar copia de recuperación**, disponible incluso al cambiar de sección; descárgala antes de cerrar la página. Los valores corruptos también pueden exportarse para recuperación manual, aunque no se aceptan como una restauración válida.
+- Formato: `pokemon-team-lab-backup`, versión 1; `entries` conserva pares clave/valor de `pokemon-team-lab:*` y `ptl-api:*`. Los nombres de archivo incluyen fecha UTC. Al restaurar se reinicia la caché en memoria, y las peticiones anteriores no sobrescriben la caché importada.
+
 ## Estructura
 
 | Archivo                        | Responsabilidad                                                                         |
@@ -117,6 +125,10 @@ Las formas dependen de los recursos disponibles en PokéAPI y en la versión ins
 | `src/moves.css`                | Selector adaptable, tipos y datos ampliados de la calculadora                           |
 | `src/moves.test.ts`            | Datos históricos, PP Champions, prioridades y cambios de EVs/SP                         |
 | `scripts/update-moves.mjs`     | Generación del catálogo local desde datos públicos de PokéAPI y Showdown                |
+| `src/BackupView.tsx`           | Exportación/importación completa desde el menú, resumen y confirmación                  |
+| `src/backup.ts`                | Formato JSON, validación, restauración y recuperación ante fallos                       |
+| `src/backup.test.ts`           | Portabilidad, protección de claves ajenas, cuota y recuperación                         |
+| `src/backup.css`               | Pantalla de copias adaptable y acceso lateral en móvil                                  |
 
 React + TypeScript + Vite, CSS propio, Lucide y Vitest. El código se formatea con Prettier.
 

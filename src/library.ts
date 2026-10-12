@@ -65,8 +65,12 @@ export function addConfiguration(
 export function persistLibrary(entries: SavedConfiguration[]) {
   writeSavedData(LIBRARY_KEY, JSON.stringify({ version: 1, entries }));
 }
-export function downloadText(text: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+export function downloadText(
+  text: string,
+  filename: string,
+  mimeType = 'text/plain;charset=utf-8',
+) {
+  const url = URL.createObjectURL(new Blob([text], { type: mimeType }));
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;

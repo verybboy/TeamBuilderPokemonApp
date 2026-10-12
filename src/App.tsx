@@ -22,6 +22,7 @@ import {
   CircleCheck,
   CircleAlert,
   X,
+  DatabaseBackup,
 } from 'lucide-react';
 import {
   calcPokemon,
@@ -35,11 +36,19 @@ import {
   type Member,
   type Team,
 } from './model';
-import { loadPokemon } from './api';
+import { loadPokemon, resetApiMemory } from './api';
 import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
 import Library from './ConfigurationLibrary';
+import BackupView from './BackupView';
+import {
+  APP_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  restoreStorageBackup,
+  BackupRestoreError,
+  type StorageBackup,
+} from './backup';
 import DefensiveCoverage from './DefensiveCoverage';
 import { SaveTeamDialog, ClearTeamDialog } from './TeamDialogs';
 import { moveInfo } from './moves';
@@ -57,7 +66,7 @@ import {
   persistTeamLibrary,
   type SavedTeamConfiguration,
 } from './library';
-const STORAGE = 'pokemon-team-lab:v1';
+const STORAGE = APP_STORAGE_KEY;
 type Slot = { team: number; slot: number };
 const demo = [
   `Torkoal @ Charcoal\nAbility: Drought\nEVs: 252 HP / 252 SpA / 4 SpD\nQuiet Nature\n- Protect\n- Heat Wave\n- Eruption\n- Weather Ball\n\nGarchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Earthquake\n- Dragon Claw\n- Rock Slide\n- Protect\n\nAmoonguss @ Sitrus Berry\nAbility: Regenerator\nEVs: 252 HP / 156 Def / 100 SpD\nRelaxed Nature\n- Spore\n- Rage Powder\n- Pollen Puff\n- Protect`,
@@ -80,7 +89,7 @@ function initialLibrary() {
 }
 function initialTheme(): 'light' | 'dark' {
   try {
-    const value = localStorage.getItem('pokemon-team-lab:theme');
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
     if (value === 'light' || value === 'dark') return value;
   } catch {}
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -93,14 +102,15 @@ function initialTeamLibrary() {
   }
 }
 export default function App() {
-  const [initial] = useState(initialState),
-    [libraryInitial] = useState(initialLibrary),
+  const [initial, setInitial] = useState(initialState),
+    [libraryInitial, setLibraryInitial] = useState(initialLibrary),
     [configurations, setConfigurations] = useState(libraryInitial.entries),
-    [teamLibraryInitial] = useState(initialTeamLibrary),
+    [teamLibraryInitial, setTeamLibraryInitial] = useState(initialTeamLibrary),
     [savedTeams, setSavedTeams] = useState(teamLibraryInitial.entries),
     [savingTeam, setSavingTeam] = useState<number | null>(null),
     [clearingTeam, setClearingTeam] = useState<number | null>(null),
-    [view, setView] = useState<'teams' | 'library'>('teams'),
+    [view, setView] = useState<'teams' | 'library' | 'backup'>('teams'),
+    [backupRecovery, setBackupRecovery] = useState<StorageBackup | null>(null),
     [theme, setTheme] = useState(initialTheme),
     [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
     [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 0),
@@ -127,7 +137,7 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
-      writeSavedData('pokemon-team-lab:theme', theme);
+      writeSavedData(THEME_STORAGE_KEY, theme);
     } catch {}
   }, [theme]);
   const occupiedSelection = selected.filter((slot) => teams[slot.team].slots[slot.slot]);
@@ -402,6 +412,43 @@ export default function App() {
     const slots = [...selected].sort((a, b) => a.team - b.team);
     setBattle(slots.map((s) => teams[s.team].slots[s.slot]!) as [Member, Member]);
   }
+  function restoreBackup(backup: StorageBackup) {
+    let data;
+    try {
+      data = restoreStorageBackup(backup);
+    } catch (error) {
+      if (error instanceof BackupRestoreError && error.recovery) {
+        setBackupRecovery((previous) => previous ?? error.recovery);
+        setStorageError(error.message);
+      }
+      throw error;
+    }
+    setBackupRecovery(null);
+    resetApiMemory();
+    setTeams(data.teams);
+    setGen(data.gen);
+    setConfigurations(data.configurations);
+    setSavedTeams(data.savedTeams);
+    setTheme(data.theme ?? initialTheme());
+    setDirty(false);
+    setStorageError('');
+    setMessage('');
+    setSaveFeedback(null);
+    setSelected([]);
+    setInitial({
+      saved: data.constructorSaved ? { teams: data.teams, gen: data.gen } : null,
+      invalid: false,
+    });
+    setLibraryInitial({ entries: data.configurations, invalid: false });
+    setTeamLibraryInitial({ entries: data.savedTeams, invalid: false });
+    setEditor(null);
+    setTransfer(null);
+    setBattle(null);
+    setSavingTeam(null);
+    setClearingTeam(null);
+    setDeleteSlots(null);
+    setHelp(false);
+  }
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -438,6 +485,20 @@ export default function App() {
             <span className="nav-dot" />
           </button>
           <button
+            className={`nav-item backup-nav ${view === 'backup' ? 'active' : ''}`}
+            title="Copia de seguridad"
+            disabled={busy}
+            onClick={() => {
+              setView('backup');
+              setSelected([]);
+              setSaveFeedback(null);
+            }}
+          >
+            <DatabaseBackup size={19} />
+            Copia de seguridad
+            <span className="nav-dot" />
+          </button>
+          <button
             className="nav-item"
             disabled={!canBattle || busy}
             title="Selecciona un Pokémon de cada equipo"
@@ -469,7 +530,13 @@ export default function App() {
         <header className="topbar">
           <div className="breadcrumb">
             Workspace <span>/</span>{' '}
-            <strong>{view === 'teams' ? 'Constructor de equipos' : 'Mis configuraciones'}</strong>
+            <strong>
+              {view === 'teams'
+                ? 'Constructor de equipos'
+                : view === 'library'
+                  ? 'Mis configuraciones'
+                  : 'Copia de seguridad'}
+            </strong>
           </div>
           <div className="save-status">
             <span className={storageError ? 'status-dot warning' : 'status-dot'} />
@@ -489,7 +556,9 @@ export default function App() {
           </div>
         </header>
         <main>
-          {view === 'library' ? (
+          {view === 'backup' ? (
+            <BackupView onRestore={restoreBackup} recovery={backupRecovery} />
+          ) : view === 'library' ? (
             <>
               {(message || storageError) && (
                 <div className="notice" role="status">
