@@ -21,6 +21,7 @@ import {
 } from './model';
 import { loadPokemon } from './api';
 import { MoveDetails } from './MovePicker';
+import { moveInfo } from './moves';
 const statuses = [
   ['', 'Sin estado'],
   ['brn', 'Quemado'],
@@ -110,7 +111,9 @@ export default function Calculator({
       members[0].moves.findIndex(Boolean),
       members[1].moves.findIndex(Boolean),
     ]),
-    [crits, setCrits] = useState<boolean[][]>([Array(4).fill(false), Array(4).fill(false)]);
+    [crits, setCrits] = useState<boolean[][]>(() =>
+      members.map((member) => member.moves.map((move) => !!moveInfo(move, gen)?.alwaysCrit)),
+    );
   function updateSide(i: number, patch: Partial<SideSettings>) {
     setSettings((s) => {
       const sides = [...s.sides] as BattleSettings['sides'];
@@ -367,7 +370,12 @@ export default function Calculator({
                   <input
                     type="checkbox"
                     aria-label={`Crítico ${move || j + 1} de ${m.data.name}`}
-                    disabled={!move || r?.statusMove}
+                    disabled={!move || r?.statusMove || moveInfo(move, gen)?.alwaysCrit}
+                    title={
+                      moveInfo(move, gen)?.alwaysCrit
+                        ? 'Crítico propio del movimiento; las habilidades defensivas pueden impedirlo.'
+                        : undefined
+                    }
                     checked={crits[i][j]}
                     onChange={(e) =>
                       setCrits((c) =>

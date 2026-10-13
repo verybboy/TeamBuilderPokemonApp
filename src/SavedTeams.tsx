@@ -10,6 +10,7 @@ export default function SavedTeams({
   entries,
   query,
   destination,
+  labName,
   teams,
   busy,
   onLoad,
@@ -19,6 +20,7 @@ export default function SavedTeams({
   entries: SavedTeamConfiguration[];
   query: string;
   destination: number;
+  labName: string;
   teams: Team[];
   busy: boolean;
   onLoad: (entry: SavedTeamConfiguration, destination: number) => Promise<void>;
@@ -168,6 +170,7 @@ export default function SavedTeams({
       {loading && (
         <Modal
           title="Cargar equipo guardado"
+          subtitle={`LAB de destino: ${labName}`}
           onClose={() => {
             if (!busy) setLoading(null);
           }}

@@ -1,0 +1,306 @@
+.type-calculator {
+  padding-top: 8px;
+}
+.type-calculator-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 26px;
+}
+.type-calculator-header h1 {
+  margin: 8px 0 12px;
+  font-size: 32px;
+  color: var(--ink);
+}
+.type-calculator-header p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.type-rules-badge {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 9px 13px;
+  background: var(--soft);
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+.type-mode {
+  display: flex;
+  width: fit-content;
+  padding: 5px;
+  gap: 5px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+.type-mode button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.type-mode button[aria-pressed='true'] {
+  background: var(--primary);
+  color: white;
+}
+.type-calculator-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.type-choice-panel,
+.type-result-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  min-width: 0;
+}
+.type-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.type-panel-heading > span {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 700;
+}
+.type-calculator h2 {
+  font-size: 16px;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+.type-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 18px;
+}
+.type-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 28px;
+}
+.type-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 43px;
+  padding: 5px 9px 5px 5px;
+  border: 2px solid transparent;
+  border-radius: 26px;
+  background: var(--soft);
+  color: var(--ink);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+}
+.type-choice > span:nth-child(2) {
+  flex: 1;
+}
+.type-choice.chosen {
+  background: color-mix(in srgb, var(--primary) 15%, var(--paper));
+  border-color: var(--primary);
+}
+.type-choice:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.type-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 50%;
+  color: white;
+}
+.type-extra-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 18px;
+}
+.type-extra-choices button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 13px 7px 7px;
+  border: 2px solid transparent;
+  border-radius: 24px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+.type-extra-choices button[aria-pressed='true'] {
+  border-color: var(--positive);
+}
+.type-toggle-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 25px;
+  width: 25px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.type-extra-choices button[aria-pressed='true'] .type-toggle-dot {
+  background: var(--positive);
+  color: var(--paper);
+}
+.type-effect-note {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-bottom: 15px;
+}
+.type-defense-ability label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.type-defense-ability select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--editable-border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--editable-bg);
+  color: var(--ink);
+}
+.type-defense-ability .type-full-hp {
+  flex-direction: row;
+  align-items: center;
+}
+.type-clear {
+  margin-top: 16px;
+}
+.type-result-group {
+  margin-top: 22px;
+}
+.type-result-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 17px;
+  color: var(--ink);
+}
+.type-result-group h3 > span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.type-result-group.weak h3 {
+  color: var(--negative);
+}
+.type-result-group.resist h3 {
+  color: var(--positive);
+}
+.type-result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.type-result {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 8px;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px #0008;
+}
+.type-result .type-icon {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+}
+.type-result.type-electric,
+.type-result.type-ice,
+.type-result.type-ground,
+.type-result.type-psychic,
+.type-result.type-bug,
+.type-result.type-rock,
+.type-result.type-steel,
+.type-result.type-fairy {
+  color: #162239;
+  text-shadow: none;
+}
+.type-result-footnote {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+@media (min-width: 1600px) {
+  .type-choices,
+  .type-result-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1100px) {
+  .type-calculator-columns {
+    grid-template-columns: 1fr;
+  }
+  .type-choices,
+  .type-result-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .type-calculator-header {
+    flex-wrap: wrap;
+  }
+  .type-calculator-header h1 {
+    font-size: 27px;
+  }
+  .type-mode {
+    width: 100%;
+  }
+  .type-mode button {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+  .type-choice-panel,
+  .type-result-panel {
+    padding: 18px;
+  }
+  .type-choices,
+  .type-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .sidebar .nav-item.types-nav {
+    display: flex;
+    grid-column: 1 / -1;
+  }
+}

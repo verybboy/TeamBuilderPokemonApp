@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Swords,
   LayoutGrid,
@@ -22,26 +22,46 @@ import {
   CircleCheck,
   CircleAlert,
   X,
+  DatabaseBackup,
+  Orbit,
 } from 'lucide-react';
 import {
   calcPokemon,
-  emptyTeams,
-  restoreTeams,
   validateMember,
   apiGeneration,
   mechanicsLabel,
   convertMemberProfile,
+  engineGeneration,
   type Gen,
   type Member,
   type Team,
 } from './model';
-import { loadPokemon } from './api';
+import {
+  activeLab as getActiveLab,
+  addLab,
+  removeLab,
+  emptyWorkspace,
+  restoreWorkspace,
+  serializeWorkspace,
+  MAX_LABS,
+  type Lab,
+} from './labs';
+import { loadPokemon, resetApiMemory } from './api';
 import { importShowdown } from './showdown';
 import { Editor, Modal, Sprite, Transfer, Types, errorText } from './components';
 import Calculator from './Calculator';
 import Library from './ConfigurationLibrary';
+import BackupView from './BackupView';
+import {
+  APP_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  restoreStorageBackup,
+  BackupRestoreError,
+  type StorageBackup,
+} from './backup';
 import DefensiveCoverage from './DefensiveCoverage';
 import { SaveTeamDialog, ClearTeamDialog } from './TeamDialogs';
+import CloseLabDialog from './CloseLabDialog';
 import { moveInfo } from './moves';
 import { MoveType } from './MovePicker';
 import { storageFailureMessage, writeSavedData } from './storage';
@@ -57,7 +77,9 @@ import {
   persistTeamLibrary,
   type SavedTeamConfiguration,
 } from './library';
-const STORAGE = 'pokemon-team-lab:v1';
+const STORAGE = APP_STORAGE_KEY;
+const MiniWiki = lazy(() => import('./MiniWiki'));
+const TypeCalculator = lazy(() => import('./TypeCalculator'));
 type Slot = { team: number; slot: number };
 const demo = [
   `Torkoal @ Charcoal\nAbility: Drought\nEVs: 252 HP / 252 SpA / 4 SpD\nQuiet Nature\n- Protect\n- Heat Wave\n- Eruption\n- Weather Ball\n\nGarchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Earthquake\n- Dragon Claw\n- Rock Slide\n- Protect\n\nAmoonguss @ Sitrus Berry\nAbility: Regenerator\nEVs: 252 HP / 156 Def / 100 SpD\nRelaxed Nature\n- Spore\n- Rage Powder\n- Pollen Puff\n- Protect`,
@@ -66,7 +88,8 @@ const demo = [
 function initialState() {
   try {
     const raw = localStorage.getItem(STORAGE);
-    return { saved: restoreTeams(raw), invalid: !!raw && !restoreTeams(raw) };
+    const saved = restoreWorkspace(raw);
+    return { saved, invalid: !!raw && !saved };
   } catch {
     return { saved: null, invalid: false };
   }
@@ -80,7 +103,7 @@ function initialLibrary() {
 }
 function initialTheme(): 'light' | 'dark' {
   try {
-    const value = localStorage.getItem('pokemon-team-lab:theme');
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
     if (value === 'light' || value === 'dark') return value;
   } catch {}
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -93,17 +116,21 @@ function initialTeamLibrary() {
   }
 }
 export default function App() {
-  const [initial] = useState(initialState),
-    [libraryInitial] = useState(initialLibrary),
+  const [initial, setInitial] = useState(initialState),
+    [libraryInitial, setLibraryInitial] = useState(initialLibrary),
     [configurations, setConfigurations] = useState(libraryInitial.entries),
-    [teamLibraryInitial] = useState(initialTeamLibrary),
+    [teamLibraryInitial, setTeamLibraryInitial] = useState(initialTeamLibrary),
     [savedTeams, setSavedTeams] = useState(teamLibraryInitial.entries),
     [savingTeam, setSavingTeam] = useState<number | null>(null),
     [clearingTeam, setClearingTeam] = useState<number | null>(null),
-    [view, setView] = useState<'teams' | 'library'>('teams'),
+    [closingLab, setClosingLab] = useState<string | null>(null),
+    [view, setView] = useState<'teams' | 'library' | 'backup' | 'wiki' | 'types'>('teams'),
+    [wikiGen, setWikiGen] = useState<Gen>(
+      engineGeneration(initial.saved ? getActiveLab(initial.saved).gen : 0),
+    ),
+    [backupRecovery, setBackupRecovery] = useState<StorageBackup | null>(null),
     [theme, setTheme] = useState(initialTheme),
-    [teams, setTeams] = useState<Team[]>(initial.saved?.teams || emptyTeams()),
-    [gen, setGen] = useState<Gen>(initial.saved?.gen ?? 0),
+    [workspace, setWorkspace] = useState(initial.saved ?? emptyWorkspace()),
     [selected, setSelected] = useState<Slot[]>([]),
     [editor, setEditor] = useState<Slot | null>(null),
     [transfer, setTransfer] = useState<{ mode: 'import' | 'export'; team: number } | null>(null),
@@ -119,6 +146,10 @@ export default function App() {
     [saveFeedback, setSaveFeedback] = useState<{ text: string; success: boolean } | null>(null),
     [dirty, setDirty] = useState(false),
     [deleteSlots, setDeleteSlots] = useState<Slot[] | null>(null);
+  const lab = getActiveLab(workspace),
+    teams = lab.teams,
+    gen = lab.gen,
+    closingTarget = workspace.labs.find((entry) => entry.id === closingLab);
   useEffect(() => {
     if (!saveFeedback?.success) return;
     const timeout = window.setTimeout(() => setSaveFeedback(null), 6000);
@@ -127,14 +158,14 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
-      writeSavedData('pokemon-team-lab:theme', theme);
+      writeSavedData(THEME_STORAGE_KEY, theme);
     } catch {}
   }, [theme]);
   const occupiedSelection = selected.filter((slot) => teams[slot.team].slots[slot.slot]);
   useEffect(() => {
     if (!dirty) return;
     try {
-      writeSavedData(STORAGE, JSON.stringify({ version: 1, gen, teams }));
+      writeSavedData(STORAGE, serializeWorkspace(workspace));
       setStorageError('');
     } catch (error) {
       setStorageError(
@@ -144,16 +175,66 @@ export default function App() {
         ),
       );
     }
-  }, [teams, gen, dirty]);
+  }, [workspace, dirty]);
   const count = teams.reduce((n, t) => n + t.slots.filter(Boolean).length, 0),
     single = selected.length === 1 ? selected[0] : null;
   const canBattle =
     selected.length === 2 &&
     selected[0].team !== selected[1].team &&
     selected.every((s) => teams[s.team].slots[s.slot]);
-  function changeTeams(value: Team[]) {
-    setTeams(value);
+  function updateLab(patch: Partial<Pick<Lab, 'name' | 'gen' | 'teams'>>) {
+    setWorkspace((current) => ({
+      ...current,
+      labs: current.labs.map((value) => (value.id === lab.id ? { ...value, ...patch } : value)),
+    }));
     setDirty(true);
+  }
+  function changeTeams(value: Team[]) {
+    updateLab({ teams: value });
+  }
+  function selectLab(id: string) {
+    if (busy || id === lab.id || !workspace.labs.some((value) => value.id === id)) return;
+    setWorkspace((current) => ({ ...current, activeLabId: id }));
+    setDirty(true);
+    clearLabContext();
+  }
+  function clearLabContext() {
+    setSelected([]);
+    setEditor(null);
+    setTransfer(null);
+    setBattle(null);
+    setSavingTeam(null);
+    setClearingTeam(null);
+    setDeleteSlots(null);
+    setClosingLab(null);
+    setMessage('');
+    setSaveFeedback(null);
+  }
+  function createLab() {
+    if (busy || workspace.labs.length >= MAX_LABS) return;
+    setWorkspace((current) => addLab(current));
+    setDirty(true);
+    clearLabContext();
+  }
+  function closeLab(id: string) {
+    const target = workspace.labs.find((entry) => entry.id === id);
+    if (!target) throw new Error('El LAB ya no está disponible.');
+    const next = removeLab(workspace, id);
+    try {
+      writeSavedData(STORAGE, serializeWorkspace(next));
+    } catch (error) {
+      throw new Error(
+        storageFailureMessage(error, 'No se pudo cerrar el LAB. Se conservan sus datos.'),
+      );
+    }
+    setWorkspace(next);
+    setInitial({ saved: next, invalid: false });
+    setDirty(false);
+    setStorageError('');
+    if (lab.id === id) clearLabContext();
+    setMessage(
+      `${target.name || 'LAB'} cerrado.${workspace.labs.length === 1 ? ' Se ha creado un LAB 1 vacío.' : ''}`,
+    );
   }
   function save(m: Member) {
     if (!editor) return;
@@ -338,8 +419,7 @@ export default function App() {
             validateMember(m, value);
             team.slots[i] = m;
           }
-      setGen(value);
-      changeTeams(next);
+      updateLab({ gen: value, teams: next });
       setSelected([]);
       setMessage(
         `${mechanicsLabel(value)} activado.${value === 0 ? ' EVs convertidos a SP; nivel 50 e IVs perfectos.' : ''}`,
@@ -356,7 +436,7 @@ export default function App() {
     setBusy(true);
     setMessage('');
     try {
-      const profile: Gen = gen === 0 ? 0 : 9;
+      const profile: Gen = gen === 0 ? 0 : gen === 10 ? 10 : 9;
       const texts =
         profile === 0
           ? [
@@ -380,13 +460,13 @@ export default function App() {
             team[i] = m;
           }
       }
-      changeTeams(
-        imported.map((members, i) => ({
+      updateLab({
+        gen: profile,
+        teams: imported.map((members, i) => ({
           name: i === 0 ? 'Equipo Aurora' : 'Equipo Eclipse',
           slots: [...members, ...Array(6 - members.length).fill(null)],
         })),
-      );
-      setGen(profile);
+      });
       setSelected([]);
       setMessage(
         'Ejemplo cargado: sol frente a lluvia. Selecciona un Pokémon de cada equipo para comparar.',
@@ -401,6 +481,44 @@ export default function App() {
     if (!canBattle) return;
     const slots = [...selected].sort((a, b) => a.team - b.team);
     setBattle(slots.map((s) => teams[s.team].slots[s.slot]!) as [Member, Member]);
+  }
+  function restoreBackup(backup: StorageBackup) {
+    let data;
+    try {
+      data = restoreStorageBackup(backup);
+    } catch (error) {
+      if (error instanceof BackupRestoreError && error.recovery) {
+        setBackupRecovery((previous) => previous ?? error.recovery);
+        setStorageError(error.message);
+      }
+      throw error;
+    }
+    setBackupRecovery(null);
+    resetApiMemory();
+    setWorkspace(data.workspace);
+    setWikiGen(engineGeneration(data.gen));
+    setConfigurations(data.configurations);
+    setSavedTeams(data.savedTeams);
+    setTheme(data.theme ?? initialTheme());
+    setDirty(false);
+    setStorageError('');
+    setMessage('');
+    setSaveFeedback(null);
+    setSelected([]);
+    setInitial({
+      saved: data.constructorSaved ? data.workspace : null,
+      invalid: false,
+    });
+    setLibraryInitial({ entries: data.configurations, invalid: false });
+    setTeamLibraryInitial({ entries: data.savedTeams, invalid: false });
+    setEditor(null);
+    setTransfer(null);
+    setBattle(null);
+    setSavingTeam(null);
+    setClearingTeam(null);
+    setClosingLab(null);
+    setDeleteSlots(null);
+    setHelp(false);
   }
   return (
     <div className="app-shell">
@@ -438,6 +556,45 @@ export default function App() {
             <span className="nav-dot" />
           </button>
           <button
+            className={`nav-item wiki-nav ${view === 'wiki' ? 'active' : ''}`}
+            title="MiniWiki"
+            onClick={() => {
+              setView('wiki');
+              setSelected([]);
+              setSaveFeedback(null);
+            }}
+          >
+            <BookOpen size={19} />
+            MiniWiki
+            <span className="nav-dot" />
+          </button>
+          <button
+            className={`nav-item types-nav ${view === 'types' ? 'active' : ''}`}
+            onClick={() => {
+              setView('types');
+              setSelected([]);
+              setSaveFeedback(null);
+            }}
+          >
+            <Orbit size={19} />
+            Calculadora de tipos
+            <span className="nav-dot" />
+          </button>
+          <button
+            className={`nav-item backup-nav ${view === 'backup' ? 'active' : ''}`}
+            title="Copia de seguridad"
+            disabled={busy}
+            onClick={() => {
+              setView('backup');
+              setSelected([]);
+              setSaveFeedback(null);
+            }}
+          >
+            <DatabaseBackup size={19} />
+            Copia de seguridad
+            <span className="nav-dot" />
+          </button>
+          <button
             className="nav-item"
             disabled={!canBattle || busy}
             title="Selecciona un Pokémon de cada equipo"
@@ -469,7 +626,17 @@ export default function App() {
         <header className="topbar">
           <div className="breadcrumb">
             Workspace <span>/</span>{' '}
-            <strong>{view === 'teams' ? 'Constructor de equipos' : 'Mis configuraciones'}</strong>
+            <strong>
+              {view === 'teams'
+                ? 'Constructor de equipos'
+                : view === 'library'
+                  ? 'Mis configuraciones'
+                  : view === 'wiki'
+                    ? 'MiniWiki'
+                    : view === 'types'
+                      ? 'Calculadora de tipos'
+                      : 'Copia de seguridad'}
+            </strong>
           </div>
           <div className="save-status">
             <span className={storageError ? 'status-dot warning' : 'status-dot'} />
@@ -489,7 +656,29 @@ export default function App() {
           </div>
         </header>
         <main>
-          {view === 'library' ? (
+          {view === 'wiki' ? (
+            <Suspense
+              fallback={
+                <p className="notice" role="status">
+                  Cargando MiniWiki…
+                </p>
+              }
+            >
+              <MiniWiki gen={wikiGen} onChangeGen={setWikiGen} />
+            </Suspense>
+          ) : view === 'types' ? (
+            <Suspense
+              fallback={
+                <p className="notice" role="status">
+                  Cargando calculadora de tipos…
+                </p>
+              }
+            >
+              <TypeCalculator />
+            </Suspense>
+          ) : view === 'backup' ? (
+            <BackupView onRestore={restoreBackup} recovery={backupRecovery} />
+          ) : view === 'library' ? (
             <>
               {(message || storageError) && (
                 <div className="notice" role="status">
@@ -497,6 +686,9 @@ export default function App() {
                 </div>
               )}
               <Library
+                labs={workspace.labs}
+                labId={lab.id}
+                onChangeLab={selectLab}
                 entries={configurations}
                 savedTeams={savedTeams}
                 teamsInvalid={teamLibraryInitial.invalid && savedTeams.length === 0}
@@ -517,14 +709,67 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className="workspace-toolbar">
-                <div className="workspace-tabs">
-                  <span className="workspace-tab">
-                    <LayoutGrid size={16} />
-                    Mis equipos<span className="pill">2</span>
-                  </span>
+              <div className="workspace-toolbar lab-toolbar">
+                <div
+                  className="workspace-tabs lab-tabs"
+                  role="tablist"
+                  aria-label="LABs del constructor"
+                >
+                  {workspace.labs.map((entry, index) => (
+                    <div
+                      className={`lab-tab-group ${entry.id === lab.id ? 'active' : ''}`}
+                      key={entry.id}
+                    >
+                      <button
+                        role="tab"
+                        aria-selected={entry.id === lab.id}
+                        aria-controls="active-lab-panel"
+                        id={`lab-tab-${entry.id}`}
+                        disabled={busy}
+                        className={`lab-tab ${entry.id === lab.id ? 'active' : ''}`}
+                        onClick={() => selectLab(entry.id)}
+                      >
+                        <LayoutGrid size={16} />
+                        {entry.name.trim() || `LAB ${index + 1}`}
+                        <span className="lab-mechanics">{mechanicsLabel(entry.gen)}</span>
+                      </button>
+                      <button
+                        className="lab-close"
+                        aria-label={`Cerrar ${entry.name.trim() || `LAB ${index + 1}`}`}
+                        title="Cerrar LAB"
+                        disabled={busy}
+                        onClick={() => setClosingLab(entry.id)}
+                      >
+                        <X size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    className="lab-add icon-button"
+                    aria-label="Añadir LAB"
+                    title={
+                      workspace.labs.length >= MAX_LABS
+                        ? 'Máximo de cinco LABs'
+                        : 'Crear un LAB con dos equipos'
+                    }
+                    disabled={busy || workspace.labs.length >= MAX_LABS}
+                    onClick={createLab}
+                  >
+                    <Plus size={19} />
+                  </button>
                 </div>
                 <div className="toolbar-controls">
+                  <label className="generation-label">
+                    Nombre del LAB
+                    <input
+                      aria-label="Nombre del LAB"
+                      maxLength={60}
+                      value={lab.name}
+                      disabled={busy}
+                      onChange={(e) => updateLab({ name: e.target.value })}
+                      className="lab-name"
+                    />
+                  </label>
                   <label className="generation-label">
                     Mecánicas
                     <select
@@ -534,6 +779,7 @@ export default function App() {
                       onChange={(e) => void changeGeneration(Number(e.target.value) as Gen)}
                     >
                       <option value={0}>Pokémon Champions</option>
+                      <option value={10}>Locke</option>
                       {Array.from({ length: 9 }, (_, i) => (
                         <option key={i} value={i + 1}>
                           Generación {i + 1}
@@ -574,7 +820,18 @@ export default function App() {
                   </button>
                 </div>
               )}
-              <div className="teams-grid">
+              {gen === 10 && (
+                <p className="small muted">
+                  Locke: cualquier Pokémon del catálogo, movimiento y habilidad. Datos y cálculos de
+                  generación IX; EVs 0–252 (510 en total) y nivel 50 por defecto.
+                </p>
+              )}
+              <div
+                className="teams-grid"
+                role="tabpanel"
+                id="active-lab-panel"
+                aria-labelledby={`lab-tab-${lab.id}`}
+              >
                 {teams.map((team, t) => (
                   <section className={`team-panel team-${t}`} key={t}>
                     <header className="team-header">
@@ -722,7 +979,7 @@ export default function App() {
                         Exportar equipo <ArrowUpRight size={14} />
                       </button>
                     </footer>
-                    <DefensiveCoverage team={team} gen={gen} />
+                    <DefensiveCoverage key={lab.id} team={team} gen={gen} />
                   </section>
                 ))}
               </div>
@@ -876,6 +1133,20 @@ export default function App() {
           onClose={() => setSavingTeam(null)}
         />
       )}
+      {closingTarget && (
+        <CloseLabDialog
+          key={closingTarget.id}
+          lab={{
+            ...closingTarget,
+            name:
+              closingTarget.name.trim() ||
+              `LAB ${workspace.labs.findIndex((entry) => entry.id === closingTarget.id) + 1}`,
+          }}
+          lastLab={workspace.labs.length === 1}
+          onClose={() => setClosingLab(null)}
+          onConfirm={() => closeLab(closingTarget.id)}
+        />
+      )}
       {clearingTeam !== null && (
         <ClearTeamDialog
           team={teams[clearingTeam]}
@@ -954,10 +1225,10 @@ export default function App() {
             </li>
           </ol>
           <p className="small muted">
-            Perfiles disponibles: generaciones I–IX y Pokémon Champions, con 0–32 SP por estadística
-            y un máximo de 66 SP. Guarda builds en «Mis configuraciones» y descárgalos como .txt. Al
-            cambiar de generación se vuelven a validar los equipos; si hay incompatibilidades, se
-            conserva la anterior.
+            Perfiles disponibles: generaciones I–IX, Locke (cualquier movimiento y habilidad, con
+            reglas IX) y Pokémon Champions, con 0–32 SP por estadística y un máximo de 66 SP. Guarda
+            builds en «Mis configuraciones» y descárgalos como .txt. Al cambiar de generación se
+            vuelven a validar los equipos; si hay incompatibilidades, se conserva la anterior.
           </p>
         </Modal>
       )}

@@ -21,6 +21,18 @@ function member(name: string) {
   return m;
 }
 describe('Datos de movimientos por perfil', () => {
+  it('detecta los críticos propios del movimiento según el perfil', () => {
+    for (const gen of [0, 9, 10] as const) {
+      for (const name of ['Frost Breath', 'Storm Throw', 'Flower Trick']) {
+        if (moveInfo(name, gen)) expect(moveInfo(name, gen)?.alwaysCrit).toBe(true);
+      }
+      expect(moveInfo('Slash', gen)?.alwaysCrit).toBe(false);
+      expect(moveInfo('Thunderbolt', gen)?.alwaysCrit).toBe(false);
+    }
+    expect(moveInfo('Wicked Blow', 9)?.alwaysCrit).toBe(true);
+    expect(moveInfo('Surging Strikes', 9)?.alwaysCrit).toBe(true);
+    expect(moveInfo('Frost Breath', 4)).toBeNull();
+  });
   it('muestra datos completos, nombre español y descripción de Heat Wave', () => {
     expect(moveInfo('Heat Wave', 9)).toMatchObject({
       name: 'Heat Wave',

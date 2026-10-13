@@ -1,0 +1,84 @@
+.backup-view {
+  max-width: 1000px;
+  margin: auto;
+}
+.backup-symbol {
+  color: var(--primary);
+}
+.backup-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 26px;
+  margin-bottom: 20px;
+}
+.backup-card h2 {
+  font-size: 19px;
+  margin-bottom: 20px;
+}
+.backup-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 14px;
+}
+.backup-counts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  border-radius: 10px;
+}
+.backup-counts strong {
+  font-size: 28px;
+  color: var(--primary);
+}
+.backup-counts span {
+  font-size: 12px;
+  font-weight: 700;
+}
+.backup-counts small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 22px 0 14px;
+}
+.backup-details {
+  margin: 12px 0;
+  line-height: 1.6;
+}
+.backup-help {
+  margin-top: 20px;
+  line-height: 1.8;
+}
+.backup-view > .error {
+  margin: 16px 0;
+}
+@media (max-width: 480px) {
+  .sidebar .nav-item.backup-nav {
+    display: flex;
+    grid-column: 1 / -1;
+  }
+  .backup-card {
+    padding: 16px;
+  }
+  .backup-counts {
+    gap: 6px;
+  }
+  .backup-counts > div {
+    padding: 10px;
+  }
+  .backup-counts span {
+    font-size: 10px;
+  }
+  .backup-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+}

@@ -96,7 +96,7 @@ describe('Megaevolución por piedra equipada', () => {
     mega.evs.spa = 0;
     expect(original).toEqual(before);
   });
-  it.each([0, 9] as Gen[])('aplica tipos y habilidad mega al daño real en perfil %s', (gen) => {
+  it.each([0, 9] as const)('aplica tipos y habilidad mega al daño real en perfil %s', (gen) => {
     const base = member('Charizard', 'Charizardite X'),
       target = member('Garchomp');
     const mega = megaEvolve(base, gen),

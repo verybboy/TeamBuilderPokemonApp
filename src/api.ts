@@ -3,6 +3,12 @@ import { API_CACHE_PREFIX, cacheApiResponse } from './storage';
 const API = 'https://pokeapi.co/api/v2/';
 const memory = new Map<string, unknown>();
 const pending = new Map<string, Promise<unknown>>();
+let cacheEpoch = 0;
+export function resetApiMemory() {
+  cacheEpoch++;
+  memory.clear();
+  pending.clear();
+}
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -26,6 +32,7 @@ export async function request<T>(path: string): Promise<T> {
     /* Cache is optional. */
   }
   if (pending.has(path)) return pending.get(path) as Promise<T>;
+  const epoch = cacheEpoch;
   const p = (async () => {
     const response = await fetch(API + path, { signal: AbortSignal.timeout(20000) });
     if (!response.ok)
@@ -36,15 +43,17 @@ export async function request<T>(path: string): Promise<T> {
           : 'No se pudo consultar PokéAPI. Inténtalo de nuevo.',
       );
     const data = await response.json();
-    memory.set(path, data);
-    cacheApiResponse(path, data);
+    if (epoch === cacheEpoch) {
+      memory.set(path, data);
+      cacheApiResponse(path, data);
+    }
     return data;
   })();
   pending.set(path, p);
   try {
     return await p;
   } finally {
-    pending.delete(path);
+    if (pending.get(path) === p) pending.delete(path);
   }
 }
 interface Named {
