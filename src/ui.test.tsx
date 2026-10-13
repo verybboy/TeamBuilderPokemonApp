@@ -5,6 +5,7 @@ import { Pokemon } from '@smogon/calc';
 import App from './App';
 import { createMember, emptyTeams, type PokemonData, type Member, type Gen } from './model';
 import Calculator from './Calculator';
+import { activeLab, restoreWorkspace, serializeWorkspace, emptyWorkspace, addLab } from './labs';
 import { loadPokemon, loadItemSprite } from './api';
 import { Sprite } from './components';
 import { LIBRARY_KEY, TEAM_LIBRARY_KEY, addConfiguration, addTeamConfiguration } from './library';
@@ -49,6 +50,11 @@ vi.mock('./api', async (importOriginal) => {
   };
 });
 const KEY = 'pokemon-team-lab:v1';
+function readConstructor() {
+  const workspace = restoreWorkspace(localStorage.getItem(KEY));
+  if (!workspace) throw new Error('Constructor guardado inválido');
+  return { version: 1, ...activeLab(workspace) };
+}
 function member(name: string): Member {
   const m = createMember(fixture(name));
   m.moves = [...m.data.moves];
@@ -95,6 +101,374 @@ beforeEach(() => {
   });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+});
+describe('Calculadora de tipos y perfil Locke', () => {
+  it('abre la calculadora desde el lateral sin modificar los equipos', async () => {
+    saved();
+    render(<App />);
+    const before = localStorage.getItem(KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'Calculadora de tipos' }));
+    await screen.findByRole('heading', { name: 'Calculadora de tipos' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cobertura defensiva' }));
+    const choices = within(screen.getByRole('group', { name: 'Tipos disponibles' }));
+    fireEvent.click(choices.getByRole('button', { name: 'Fuego' }));
+    fireEvent.click(choices.getByRole('button', { name: 'Volador' }));
+    expect(screen.getByRole('heading', { name: /Sufre 4× por/ })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect(localStorage.getItem(KEY)).toBe(before);
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+  });
+  it('edita combinaciones libres, guarda y restaura Locke, y rechaza el cambio a IX si son incompatibles', async () => {
+    saved();
+    const view = render(<App />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '10' },
+    });
+    await waitFor(() => expect(readConstructor().gen).toBe(10));
+    fireEvent.click(screen.getByRole('button', { name: 'Pikachu' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Habilidad' }), {
+      target: { value: 'Huge Power' },
+    });
+    const input = screen.getByRole('combobox', { name: 'Movimiento 1' });
+    fireEvent.change(input, { target: { value: 'Earthquake' } });
+    fireEvent.click(screen.getByRole('option', { name: 'Earthquake' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar Pokémon' }));
+    await waitFor(() => expect(readConstructor().teams[0].slots[1]!.ability).toBe('Huge Power'));
+    expect(readConstructor().teams[0].slots[1]!.moves[0]).toBe('Earthquake');
+    view.unmount();
+    render(<App />);
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '10',
+    );
+    const before = localStorage.getItem(KEY);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '9' },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('Habilidad no válida'),
+    );
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '10',
+    );
+    expect(localStorage.getItem(KEY)).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'MiniWiki' }));
+    await screen.findByRole('heading', { name: 'MiniWiki' });
+    expect(
+      (screen.getByRole('combobox', { name: 'Generación de MiniWiki' }) as HTMLSelectElement).value,
+    ).toBe('9');
+  }, 20000);
+});
+describe('LABs independientes', () => {
+  function confirmLabClosure() {
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con el cierre' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Escribe CERRAR para confirmar' }), {
+      target: { value: 'CERRAR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar y cerrar LAB' }));
+  }
+  it('permite cancelar ambos pasos y exige la segunda confirmación antes de cerrar el LAB inactivo', () => {
+    saved();
+    const libraryTeam = emptyTeams()[0];
+    libraryTeam.slots[0] = member('Pikachu');
+    localStorage.setItem(
+      LIBRARY_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: addConfiguration([], member('Pikachu'), 9, 'Ratón').entries,
+      }),
+    );
+    localStorage.setItem(
+      TEAM_LIBRARY_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: addTeamConfiguration([], libraryTeam, 9, 'Ratón guardado').entries,
+      }),
+    );
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    const before = localStorage.getItem(KEY),
+      pokemon = localStorage.getItem(LIBRARY_KEY),
+      teams = localStorage.getItem(TEAM_LIBRARY_KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 1' }));
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('dialog').textContent).toContain('Garchomp');
+    expect(localStorage.getItem(KEY)).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con el cierre' }));
+    expect(
+      (screen.getByRole('button', { name: 'Confirmar y cerrar LAB' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(localStorage.getItem(KEY)).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 1' }));
+    confirmLabClosure();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('tab', { name: /LAB 1/ })).toBeNull();
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+    expect(restoreWorkspace(localStorage.getItem(KEY))!.labs).toHaveLength(1);
+    expect(localStorage.getItem(LIBRARY_KEY)).toBe(pokemon);
+    expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(teams);
+  }, 15000);
+  it('cierra el activo, abre su vecino y conserva los LABs restantes al recargar', () => {
+    saved();
+    const view = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 2' }));
+    confirmLabClosure();
+    expect(screen.getByRole('tab', { name: /LAB 1/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+    view.unmount();
+    render(<App />);
+    expect(screen.queryByRole('tab', { name: /LAB 2/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+  }, 15000);
+  it('al cerrar el último LAB deja uno vacío, persistido y utilizable', () => {
+    saved();
+    const view = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 1' }));
+    expect(screen.getByRole('dialog').textContent).toContain('último LAB');
+    confirmLabClosure();
+    expect(screen.queryByRole('button', { name: 'Garchomp' })).toBeNull();
+    expect(restoreWorkspace(localStorage.getItem(KEY))).toEqual(emptyWorkspace());
+    view.unmount();
+    render(<App />);
+    expect(screen.getByRole('tab', { name: /LAB 1/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByRole('button', { name: /^Añadir Pokémon/ })).toHaveLength(12);
+  }, 15000);
+  it('si falla el guardado conserva el LAB y permite reintentar el cierre', () => {
+    saved();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    const before = localStorage.getItem(KEY),
+      original = Storage.prototype.setItem;
+    const failure = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (key === KEY) throw new DOMException('Blocked', 'SecurityError');
+      return original.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar LAB 2' }));
+    confirmLabClosure();
+    expect(screen.getByRole('alert').textContent).toContain('No se pudo cerrar el LAB');
+    expect(localStorage.getItem(KEY)).toBe(before);
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+    failure.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar y cerrar LAB' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(restoreWorkspace(localStorage.getItem(KEY))!.labs).toHaveLength(1);
+  }, 15000);
+  it('migra LAB 1, crea hasta cinco, conserva equipos y mecánicas y restaura el LAB activo', async () => {
+    saved();
+    const original = localStorage.getItem(KEY);
+    const view = render(<App />);
+    expect(screen.getByRole('tab', { name: /LAB 1/ }).getAttribute('aria-selected')).toBe('true');
+    expect(localStorage.getItem(KEY)).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '0',
+    );
+    expect(screen.queryByRole('button', { name: 'Garchomp' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Añadir Pokémon/ })).toHaveLength(12);
+    expect(
+      (screen.getByRole('button', { name: 'Enfrentar Pokémon' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del LAB' }), {
+      target: { value: 'Random Locke' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '10' },
+    });
+    await waitFor(() => expect(readConstructor().gen).toBe(10));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre equipo 1' }), {
+      target: { value: 'Aleatorio' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /LAB 1/ }));
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+    expect(
+      screen
+        .getByRole('button', { name: /Seleccionar plaza 1 de equipo 1:/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('false');
+    fireEvent.click(screen.getByRole('tab', { name: /Random Locke/ }));
+    expect(
+      (screen.getByRole('textbox', { name: 'Nombre equipo 1' }) as HTMLInputElement).value,
+    ).toBe('Aleatorio');
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    expect(
+      within(screen.getByRole('tablist', { name: 'LABs del constructor' })).getAllByRole('tab'),
+    ).toHaveLength(5);
+    expect((screen.getByRole('button', { name: 'Añadir LAB' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    const raw = JSON.parse(localStorage.getItem(KEY)!);
+    expect(raw.version).toBe(2);
+    expect(raw.labs).toHaveLength(5);
+    expect(raw.labs[0].teams).toEqual(JSON.parse(original!).teams);
+    expect(raw.labs[1].gen).toBe(10);
+    view.unmount();
+    render(<App />);
+    expect(screen.getByRole('tab', { name: /LAB 5/ }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: /Random Locke/ }));
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '10',
+    );
+  }, 15000);
+  it('dirige Pokémon y equipos guardados al LAB elegido y conserva los demás LABs', async () => {
+    saved();
+    localStorage.setItem(
+      LIBRARY_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: addConfiguration([], member('Pikachu'), 9, 'Ratón').entries,
+      }),
+    );
+    const team = emptyTeams()[0];
+    team.slots[2] = member('Torkoal');
+    localStorage.setItem(
+      TEAM_LIBRARY_KEY,
+      JSON.stringify({ version: 1, entries: addTeamConfiguration([], team, 9, 'Sol').entries }),
+    );
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    fireEvent.click(screen.getByRole('tab', { name: /LAB 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    expect(
+      screen.getByRole('heading', { name: 'Mis configuraciones' }).querySelector('.pill'),
+    ).toBeNull();
+    expect(screen.getByRole('tab', { name: /Mis Pokémon/ }).textContent).toContain('1');
+    expect(screen.getByRole('tab', { name: /Mis equipos/ }).textContent).toContain('1');
+    const workspace = restoreWorkspace(localStorage.getItem(KEY))!;
+    const original = structuredClone(workspace.labs[0]);
+    fireEvent.change(screen.getByRole('combobox', { name: 'LAB de implementación' }), {
+      target: { value: workspace.labs[1].id },
+    });
+    expect(
+      (screen.getByRole('combobox', { name: 'Mecánicas de la biblioteca' }) as HTMLSelectElement)
+        .value,
+    ).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: /Añadir Ratón/ }));
+    await waitFor(() => expect(readConstructor().teams[0].slots[0]?.data.name).toBe('Pikachu'));
+    expect(restoreWorkspace(localStorage.getItem(KEY))!.labs[0]).toEqual(original);
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Equipo de destino' }), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Cargar Sol/ }));
+    await waitFor(() => expect(readConstructor().teams[1].slots[2]?.data.name).toBe('Torkoal'));
+    expect(readConstructor().gen).toBe(0);
+    expect(restoreWorkspace(localStorage.getItem(KEY))!.labs[0]).toEqual(original);
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Pikachu' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Torkoal' })).toBeDefined();
+  }, 15000);
+  it('restaura desde una copia todos los LABs, incluidos sus perfiles y el activo', async () => {
+    let workspace = addLab(emptyWorkspace());
+    workspace.labs[0].gen = 9;
+    workspace.labs[0].teams[0].slots[0] = member('Pikachu');
+    workspace.labs[1].gen = 10;
+    workspace.labs[1].name = 'Libre';
+    workspace.labs[1].teams[1].slots[3] = member('Garchomp');
+    localStorage.setItem(KEY, serializeWorkspace(workspace));
+    const backup = createStorageBackup();
+    localStorage.clear();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copia de seguridad' }));
+    const file = new File([''], 'labs.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', { value: async () => JSON.stringify(backup) });
+    fireEvent.change(screen.getByLabelText('Importar copia de seguridad JSON'), {
+      target: { files: [file] },
+    });
+    await screen.findByRole('dialog', { name: 'Restaurar copia de seguridad' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos y restaurar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect(screen.getByRole('tab', { name: /Libre/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Garchomp' })).toBeDefined();
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '10',
+    );
+    expect(restoreWorkspace(localStorage.getItem(KEY))).toEqual(workspace);
+    fireEvent.click(screen.getByRole('tab', { name: /LAB 1/ }));
+    expect(screen.getByRole('button', { name: 'Pikachu' })).toBeDefined();
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+  }, 15000);
+});
+describe('Críticos propios del movimiento', () => {
+  it.each([9, 10] as const)(
+    'marca los ataques de crítico fijo y permite críticos manuales en los demás, perfil %s',
+    (gen) => {
+      const a = member('Garchomp'),
+        b = member('Torkoal');
+      a.moves = ['Frost Breath', 'Storm Throw', 'Flower Trick', 'Wicked Blow'];
+      b.moves = ['Surging Strikes', 'Slash', 'Thunderbolt', 'Protect'];
+      render(<Calculator members={[a, b]} gen={gen} onClose={() => {}} />);
+      for (const move of a.moves) {
+        const input = screen.getByRole('checkbox', {
+          name: `Crítico ${move} de Garchomp`,
+        }) as HTMLInputElement;
+        expect(input.checked).toBe(true);
+        expect(input.disabled).toBe(true);
+      }
+      expect(
+        (
+          screen.getByRole('checkbox', {
+            name: 'Crítico Surging Strikes de Torkoal',
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true);
+      const slash = screen.getByRole('checkbox', {
+        name: 'Crítico Slash de Torkoal',
+      }) as HTMLInputElement;
+      expect(slash.checked).toBe(false);
+      expect(slash.disabled).toBe(false);
+      fireEvent.click(slash);
+      expect(slash.checked).toBe(true);
+      expect(
+        (screen.getByRole('checkbox', { name: 'Crítico Protect de Torkoal' }) as HTMLInputElement)
+          .disabled,
+      ).toBe(true);
+    },
+  );
+});
+describe('MiniWiki desde el menú', () => {
+  it('consulta una generación independiente sin cambiar el constructor ni su guardado', async () => {
+    saved();
+    render(<App />);
+    const before = localStorage.getItem(KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'MiniWiki' }));
+    await screen.findByRole('heading', { name: 'MiniWiki' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación de MiniWiki' }), {
+      target: { value: '7' },
+    });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar en MiniWiki' }), {
+      target: { value: 'heat' },
+    });
+    expect(screen.getByRole('button', { name: 'Roca Calor' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
+      '9',
+    );
+    expect(localStorage.getItem(KEY)).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'MiniWiki' }));
+    await screen.findByRole('heading', { name: 'MiniWiki' });
+    expect(
+      (screen.getByRole('combobox', { name: 'Generación de MiniWiki' }) as HTMLSelectElement).value,
+    ).toBe('7');
+  });
 });
 describe('Copia completa desde el menú lateral', () => {
   function incoming() {
@@ -191,7 +565,7 @@ describe('Copia completa desde el menú lateral', () => {
       '0',
     );
     expect(screen.getByRole('button', { name: 'Torkoal' })).toBeDefined();
-    expect(JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!).teams[0].slots[4].hpPercent).toBe(37);
+    expect(readConstructor().teams[0].slots[4]!.hpPercent).toBe(37);
     fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
     expect(screen.getByText('Ratón guardado')).toBeDefined();
     fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
@@ -343,7 +717,7 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     expect(entries[0].name).toBe('Sexto equipo');
     expect(entries.slice(1)).toEqual(previous);
     expect(localStorage.getItem('ptl-api:pokemon/old')).toBeNull();
-    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].data.name).toBe('Garchomp');
+    expect(readConstructor().teams[0].slots[0]!.data.name).toBe('Garchomp');
     expect(screen.queryByRole('alert')).toBeNull();
   });
   it('no sobrescribe una biblioteca de equipos corrupta al abrir o cambiar de pestaña', () => {
@@ -365,7 +739,7 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     expect(entry.name).toBe('Mi arena');
     expect(entry.gen).toBe(9);
     expect(entry.team.slots).toHaveLength(6);
-    expect(entry.team.slots[0].data.name).toBe('Garchomp');
+    expect(entry.team.slots[0]!.data.name).toBe('Garchomp');
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox', { name: 'Nombre equipo 1' }), {
       target: { value: 'Nombre nuevo' },
@@ -404,9 +778,9 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
       target: { value: 'LIMPIAR' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar y limpiar equipo' }));
-    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    const stored = readConstructor();
     expect(stored.teams[0].slots).toEqual(Array(6).fill(null));
-    expect(stored.teams[1].slots[0].data.name).toBe('Torkoal');
+    expect(stored.teams[1].slots[0]!.data.name).toBe('Torkoal');
     expect(stored.teams[0].name).toBe(JSON.parse(original!).teams[0].name);
     expect(
       screen
@@ -455,7 +829,7 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo Arena' }));
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar equipo guardado' }));
     expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(0);
-    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].data.name).toBe('Garchomp');
+    expect(readConstructor().teams[0].slots[0]!.data.name).toBe('Garchomp');
   });
   it('carga el equipo completo en el destino elegido después de confirmar el reemplazo', async () => {
     saved();
@@ -466,14 +840,14 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
       target: { value: '1' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Cargar Arena en/ }));
-    expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].slots[0].data.name).toBe('Torkoal');
+    expect(readConstructor().teams[1].slots[0]!.data.name).toBe('Torkoal');
     fireEvent.click(screen.getByRole('button', { name: 'Reemplazar equipo' }));
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(KEY)!).teams[1].name).toBe('Arena'));
-    const team = JSON.parse(localStorage.getItem(KEY)!).teams[1];
-    expect(team.slots[0].data.name).toBe('Garchomp');
+    await waitFor(() => expect(readConstructor().teams[1].name).toBe('Arena'));
+    const team = readConstructor().teams[1];
+    expect(team.slots[0]!.data.name).toBe('Garchomp');
     expect(team.slots[1]).toBeNull();
-    expect(team.slots[2].data.name).toBe('Pikachu');
-    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].name).not.toBe('Arena');
+    expect(team.slots[2]!.data.name).toBe('Pikachu');
+    expect(readConstructor().teams[0].name).not.toBe('Arena');
   });
   it('valida todos los miembros antes de reemplazar y conserva los equipos ante un error', async () => {
     saved();
@@ -494,15 +868,15 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
   it('convierte equipos guardados de generación 9 a Champions antes de cargar', async () => {
     const team = emptyTeams()[0];
     team.slots[3] = member('Torkoal');
-    team.slots[3].evs = { hp: 252, atk: 0, def: 0, spa: 252, spd: 4, spe: 0 };
+    team.slots[3]!.evs = { hp: 252, atk: 0, def: 0, spa: 252, spd: 4, spe: 0 };
     storeTeams(addTeamConfiguration([], team, 9, 'Sol').entries);
     render(<App />);
     openTeams();
     fireEvent.click(screen.getByRole('button', { name: /Cargar Sol en/ }));
     await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull());
-    const stored = JSON.parse(localStorage.getItem(KEY)!);
+    const stored = readConstructor();
     expect(stored.gen).toBe(0);
-    expect(stored.teams[0].slots[3].evs).toEqual({
+    expect(stored.teams[0].slots[3]!.evs).toEqual({
       hp: 32,
       atk: 0,
       def: 0,
@@ -647,7 +1021,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
       target: { value: '2' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar Pokémon' }));
-    expect(JSON.parse(localStorage.getItem(KEY)!).teams[0].slots[0].evs.def).toBe(2);
+    expect(readConstructor().teams[0].slots[0]!.evs.def).toBe(2);
   });
   it('muestra las estadísticas de cada naturaleza y sus flechas de color', () => {
     saved();
@@ -687,7 +1061,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.queryByRole('button', { name: 'Garchomp' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Torkoal' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Pikachu' })).toBeDefined();
-    const teams = JSON.parse(localStorage.getItem(KEY)!).teams;
+    const teams = readConstructor().teams;
     expect(teams[0].slots[0]).toBeNull();
     expect(teams[1].slots[0]).toBeNull();
   });
@@ -745,9 +1119,9 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
       screen.getByRole('button', { name: 'Añadir Tiburón ofensivo a Equipo Eclipse' }),
     );
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('añadida'));
-    const teams = JSON.parse(localStorage.getItem(KEY)!).teams;
-    expect(teams[1].slots[0].data.name).toBe('Torkoal');
-    expect(teams[1].slots[1].data.name).toBe('Garchomp');
+    const teams = readConstructor().teams;
+    expect(teams[1].slots[0]!.data.name).toBe('Torkoal');
+    expect(teams[1].slots[1]!.data.name).toBe('Garchomp');
     expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).entries[0].name).toBe('Tiburón ofensivo');
     view.unmount();
     render(<App />);
@@ -1068,9 +1442,9 @@ describe('Champions inicial, selector de movimientos y repartos del cálculo', (
     'edita $label respetando sus límites, conserva PS y restablece sin modificar el equipo',
     ({ gen, max, total, label }) => {
       saved();
-      const savedTeams = JSON.parse(localStorage.getItem(KEY)!);
+      const savedTeams = readConstructor();
       savedTeams.gen = gen;
-      savedTeams.teams[0].slots[0].hpPercent = 40;
+      savedTeams.teams[0].slots[0]!.hpPercent = 40;
       localStorage.setItem(KEY, JSON.stringify(savedTeams));
       const before = localStorage.getItem(KEY);
       render(<App />);
@@ -1218,11 +1592,11 @@ describe('Flujos completos de interfaz', () => {
     ).toBeLessThan(oldHP);
     fireEvent.click(screen.getByRole('button', { name: 'Guardar Pokémon' }));
     expect(screen.queryByRole('dialog')).toBeNull();
-    const saved = JSON.parse(localStorage.getItem(KEY)!);
-    expect(saved.teams[0].slots[0].hpPercent).toBe(50);
-    expect(saved.teams[0].slots[0].ivs.hp).toBe(0);
-    expect(saved.teams[0].slots[0].level).toBe(50);
-  });
+    const saved = readConstructor();
+    expect(saved.teams[0].slots[0]!.hpPercent).toBe(50);
+    expect(saved.teams[0].slots[0]!.ivs.hp).toBe(0);
+    expect(saved.teams[0].slots[0]!.level).toBe(50);
+  }, 10000);
   it('importa, exporta y restaura un Pokémon con datos reales del formulario', async () => {
     const view = render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
@@ -1304,7 +1678,7 @@ describe('Flujos completos de interfaz', () => {
     expect((screen.getByRole('combobox', { name: 'Generación' }) as HTMLSelectElement).value).toBe(
       '9',
     );
-    expect(JSON.parse(localStorage.getItem(KEY)!).gen).toBe(9);
+    expect(readConstructor().gen).toBe(9);
   });
   it('avisa si el almacenamiento falla', async () => {
     render(<App />);

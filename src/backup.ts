@@ -1,4 +1,5 @@
-import { emptyTeams, restoreTeams, stats, type Gen, type Member, type Team } from './model';
+import { stats, type Gen, type Member, type Team } from './model';
+import { activeLab, emptyWorkspace, restoreWorkspace, type Workspace } from './labs';
 import {
   LIBRARY_KEY,
   TEAM_LIBRARY_KEY,
@@ -19,6 +20,7 @@ export interface StorageBackup {
   entries: [string, string][];
 }
 export interface RestoredAppData {
+  workspace: Workspace;
   teams: Team[];
   gen: Gen;
   constructorSaved: boolean;
@@ -97,7 +99,7 @@ export function validateStorageBackup(value: unknown): {
     entries.set(entry[0], entry[1]);
   }
   const constructor = entries.has(APP_STORAGE_KEY)
-    ? restoreTeams(entries.get(APP_STORAGE_KEY)!)
+    ? restoreWorkspace(entries.get(APP_STORAGE_KEY)!)
     : null;
   if (entries.has(APP_STORAGE_KEY) && !constructor)
     throw new Error('Los equipos del constructor de la copia no son válidos.');
@@ -108,14 +110,20 @@ export function validateStorageBackup(value: unknown): {
   const theme = entries.get(THEME_STORAGE_KEY) ?? null;
   if (theme !== null && theme !== 'light' && theme !== 'dark')
     throw new Error('El tema guardado de la copia no es válido.');
-  for (const team of [...(constructor?.teams ?? []), ...teams.entries.map((entry) => entry.team)])
+  for (const team of [
+    ...(constructor?.labs.flatMap((lab) => lab.teams) ?? []),
+    ...teams.entries.map((entry) => entry.team),
+  ])
     for (const member of team.slots) if (member) validateMemberData(member);
   for (const entry of pokemon.entries) validateMemberData(entry.member);
+  const workspace = constructor ?? emptyWorkspace(),
+    current = activeLab(workspace);
   return {
     backup: input as StorageBackup,
     data: {
-      teams: constructor?.teams ?? emptyTeams(),
-      gen: constructor?.gen ?? 0,
+      workspace,
+      teams: current.teams,
+      gen: current.gen,
       constructorSaved: !!constructor,
       configurations: pokemon.entries,
       savedTeams: teams.entries,
@@ -142,17 +150,20 @@ export function backupSummary(backup: StorageBackup) {
       return null;
     }
   }
-  const constructor = json(APP_STORAGE_KEY),
+  const constructor = restoreWorkspace(entries.get(APP_STORAGE_KEY) ?? null),
     pokemon = json(LIBRARY_KEY),
     teams = json(TEAM_LIBRARY_KEY);
   return {
-    constructorTeams: Array.isArray(constructor?.teams) ? constructor.teams.length : 0,
-    constructorPokemon: Array.isArray(constructor?.teams)
-      ? constructor.teams.reduce(
-          (sum: number, team: Team) =>
-            sum + (Array.isArray(team?.slots) ? team.slots.filter(Boolean).length : 0),
-          0,
-        )
+    constructorLabs: constructor?.labs.length ?? 0,
+    constructorTeams: constructor?.labs.reduce((sum, lab) => sum + lab.teams.length, 0) ?? 0,
+    constructorPokemon: constructor
+      ? constructor.labs
+          .flatMap((lab) => lab.teams)
+          .reduce(
+            (sum: number, team: Team) =>
+              sum + (Array.isArray(team?.slots) ? team.slots.filter(Boolean).length : 0),
+            0,
+          )
       : 0,
     pokemon: Array.isArray(pokemon?.entries) ? pokemon.entries.length : 0,
     teams: Array.isArray(teams?.entries) ? teams.entries.length : 0,

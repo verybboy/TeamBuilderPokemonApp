@@ -1,12 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { Pokemon } from '@smogon/calc';
-import { createMember, emptyTeams, spread, type Gen, type PokemonData } from './model';
+import {
+  createMember,
+  emptyTeams,
+  spread,
+  engineGeneration,
+  type Gen,
+  type PokemonData,
+} from './model';
 import { addTeamConfiguration, restoreTeamLibrary, alphabetical } from './library';
 import { coverageTeam, defensiveCoverage } from './coverage';
 import { damageFor, fieldFor, type BattleSettings } from './battle';
 
 function member(name: string, gen: Gen = 9) {
-  const p = new Pokemon(gen, name);
+  const p = new Pokemon(engineGeneration(gen), name);
   const data: PokemonData = {
     name,
     apiName: name.toLowerCase(),

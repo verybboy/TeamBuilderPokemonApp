@@ -16,8 +16,8 @@
   --positive: #159447;
   --negative: #d82c45;
   --shadow: #143b7312;
-  --editable-bg: #f2f7ff;
-  --editable-border: #abc6ef;
+  --editable-bg: #ffffff;
+  --editable-border: #83aceb;
   color: var(--ink);
   background: var(--bg);
 }
@@ -36,8 +36,8 @@
   --positive: #5bed95;
   --negative: #ff7186;
   --shadow: #00000035;
-  --editable-bg: #2b4060;
-  --editable-border: #587bab;
+  --editable-bg: #405b80;
+  --editable-border: #86addc;
 }
 body,
 .main-shell {

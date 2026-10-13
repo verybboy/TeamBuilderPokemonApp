@@ -1,4 +1,4 @@
-import { useState, useRef, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import {
   Search,
   ArrowUpFromLine,
@@ -19,7 +19,11 @@ import {
 } from './library';
 import SavedTeams from './SavedTeams';
 import { exportShowdown } from './showdown';
+import type { Lab } from './labs';
 export default function Library({
+  labs,
+  labId,
+  onChangeLab,
   entries,
   savedTeams,
   teamsInvalid,
@@ -37,6 +41,9 @@ export default function Library({
   onDelete,
   onChangeMechanics,
 }: {
+  labs: Lab[];
+  labId: string;
+  onChangeLab: (id: string) => void;
   entries: SavedConfiguration[];
   savedTeams: SavedTeamConfiguration[];
   teamsInvalid: boolean;
@@ -64,6 +71,10 @@ export default function Library({
     [exporting, setExporting] = useState<SavedConfiguration | null>(null),
     [name, setName] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setTeam(0);
+    setError('');
+  }, [labId]);
   const visible = entries
     .filter((entry) =>
       `${entry.name} ${entry.member.data.name} ${entry.member.nature} ${entry.member.moves.join(' ')}`
@@ -99,9 +110,7 @@ export default function Library({
       <div className="library-intro">
         <div>
           <p className="eyebrow">TU COLECCIÓN DE ESTRATEGIAS</p>
-          <h1>
-            Mis configuraciones <span className="pill">{entries.length + savedTeams.length}</span>
-          </h1>
+          <h1>Mis configuraciones</h1>
           <p>
             Guarda tus Pokémon y equipos favoritos. Consulta sus configuraciones y reutilízalas.
           </p>
@@ -168,8 +177,27 @@ export default function Library({
           />
         </label>
         <label>
+          LAB de implementación
+          <select
+            aria-label="LAB de implementación"
+            value={labId}
+            disabled={busy || fileBusy}
+            onChange={(e) => onChangeLab(e.target.value)}
+          >
+            {labs.map((lab, index) => (
+              <option value={lab.id} key={lab.id}>
+                {lab.name.trim() || `LAB ${index + 1}`} · {mechanicsLabel(lab.gen)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Equipo de destino
-          <select value={team} onChange={(e) => setTeam(Number(e.target.value))}>
+          <select
+            disabled={busy || fileBusy}
+            value={team}
+            onChange={(e) => setTeam(Number(e.target.value))}
+          >
             {teams.map((t, i) => (
               <option key={i} value={i}>
                 {t.name} · {6 - t.slots.filter(Boolean).length} plazas libres
@@ -186,6 +214,7 @@ export default function Library({
             onChange={(e) => void onChangeMechanics(Number(e.target.value) as Gen)}
           >
             <option value={0}>Pokémon Champions</option>
+            <option value={10}>Locke</option>
             {Array.from({ length: 9 }, (_, i) => (
               <option value={i + 1} key={i}>
                 {mechanicsLabel((i + 1) as Gen)}
@@ -195,9 +224,10 @@ export default function Library({
         </label>
       </div>
       <p className="small muted library-explanation">
-        Cada configuración conserva su perfil. Al añadirla a otro perfil se convierte y valida antes
-        de ocupar una plaza. Los .txt de Champions usan los valores SP (0–32) en la línea EVs;
-        impórtalos con Champions seleccionado.
+        El LAB elegido determina los equipos de destino y su mecánica; cambiar el perfil solo afecta
+        a ese LAB. Cada configuración conserva su perfil. Al añadirla a otro perfil se convierte y
+        valida antes de ocupar una plaza. Los .txt de Champions usan los valores SP (0–32) en la
+        línea EVs; impórtalos con Champions seleccionado.
       </p>
       {(tab === 'pokemon' ? invalid : teamsInvalid) && (
         <p className="error" role="alert">
@@ -213,6 +243,8 @@ export default function Library({
       {tab === 'teams' ? (
         <div id="team-library-panel" role="tabpanel" aria-labelledby="team-library-tab">
           <SavedTeams
+            key={labId}
+            labName={labs.find((lab) => lab.id === labId)?.name || 'LAB seleccionado'}
             entries={savedTeams}
             query={query}
             destination={team}

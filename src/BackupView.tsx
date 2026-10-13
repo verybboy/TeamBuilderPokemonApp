@@ -20,7 +20,9 @@ function BackupSummary({ backup }: { backup: StorageBackup }) {
         <div>
           <strong>{summary.constructorTeams}</strong>
           <span>Equipos del constructor</span>
-          <small>{summary.constructorPokemon} Pokémon en sus plazas</small>
+          <small>
+            {summary.constructorLabs} LABs · {summary.constructorPokemon} Pokémon en sus plazas
+          </small>
         </div>
         <div>
           <strong>{summary.teams}</strong>

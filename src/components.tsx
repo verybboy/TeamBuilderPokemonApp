@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   X,
   Search,
@@ -206,9 +206,15 @@ export function Editor({
     [configurationSaved, setConfigurationSaved] = useState(false);
   const era = apiGeneration(gen),
     limits = trainingLimits(gen);
+  const unrestricted = useMemo(
+    () => (gen === 10 ? { abilities: names(gen, 'abilities'), moves: names(gen, 'moves') } : null),
+    [gen],
+  );
   const pokemonNames = names(gen, 'species'),
     items = names(gen, 'items'),
-    natures = names(gen, 'natures');
+    natures = names(gen, 'natures'),
+    abilities = unrestricted?.abilities ?? draft?.data.abilities ?? [],
+    availableMoves = unrestricted?.moves ?? draft?.data.moves ?? [];
   const update = <K extends keyof Member>(key: K, value: Member[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : null));
   async function search() {
@@ -348,7 +354,7 @@ export function Editor({
                     {era < 3 ? (
                       <option value="">No existe en esta generación</option>
                     ) : (
-                      draft.data.abilities.map((a) => <option key={a}>{a}</option>)
+                      abilities.map((a) => <option key={a}>{a}</option>)
                     )}
                   </select>
                 </label>
@@ -381,7 +387,12 @@ export function Editor({
                 </label>
               </div>
               <h4>
-                Movimientos <span className="muted">Solo los que puede aprender</span>
+                Movimientos{' '}
+                <span className="muted">
+                  {gen === 10
+                    ? 'Todos los movimientos · generación IX'
+                    : 'Solo los que puede aprender'}
+                </span>
               </h4>
               <p className="small muted move-pp-note">
                 {gen === 0 ? 'PP disponibles en Champions.' : 'PP máximos con 3 PP Más.'} Acierto y
@@ -394,7 +405,7 @@ export function Editor({
                     label={`Movimiento ${i + 1}`}
                     value={move}
                     gen={gen}
-                    names={draft.data.moves}
+                    names={availableMoves}
                     onChange={(name) => {
                       const moves = [...draft.moves];
                       moves[i] = name;

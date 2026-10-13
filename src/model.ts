@@ -1,8 +1,14 @@
 import { Generations, Pokemon, toID } from '@smogon/calc';
-// Smogon's generation 0 selects the native Champions engine.
-export type Gen = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-export const mechanicsLabel = (gen: Gen) => (gen === 0 ? 'Pokémon Champions' : `Generación ${gen}`);
-export const apiGeneration = (gen: Gen): Exclude<Gen, 0> => (gen === 0 ? 9 : gen);
+// Profile 0 is native Champions; 10 is Locke, using the generation IX engine.
+export type EngineGen = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type Gen = EngineGen | 10;
+export const engineGeneration = (gen: Gen): EngineGen => (gen === 10 ? 9 : gen);
+export const isGen = (value: unknown): value is Gen =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
+export const mechanicsLabel = (gen: Gen) =>
+  gen === 0 ? 'Pokémon Champions' : gen === 10 ? 'Locke' : `Generación ${gen}`;
+export const apiGeneration = (gen: Gen): Exclude<EngineGen, 0> =>
+  gen === 0 || gen === 10 ? 9 : gen;
 export const trainingLimits = (gen: Gen) =>
   gen === 0 ? { perStat: 32, total: 66, label: 'SP' } : { perStat: 252, total: 510, label: 'EVs' };
 export const stats = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
@@ -17,7 +23,7 @@ export const statLabels: Record<Stat, string> = {
   spe: 'Velocidad',
 };
 export const spread = (n: number): Spread => ({ hp: n, atk: n, def: n, spa: n, spd: n, spe: n });
-export const generations = Generations;
+export const generations = { get: (gen: Gen) => Generations.get(engineGeneration(gen)) };
 export const id = (s: string) => String(toID(s));
 export function natureEffect(nature: string) {
   const value = generations.get(9).natures.get(toID(nature));
@@ -186,7 +192,7 @@ export function validateMember(m: Member, gen: Gen) {
   if (!m.data.genders.includes(m.gender)) throw new Error('Sexo incompatible con la especie.');
   if (
     apiGeneration(gen) >= 3 &&
-    (!m.data.abilities.includes(m.ability) || !g.abilities.get(toID(m.ability)))
+    ((gen !== 10 && !m.data.abilities.includes(m.ability)) || !g.abilities.get(toID(m.ability)))
   )
     throw new Error('Habilidad no válida para esta especie y generación.');
   if (!g.natures.get(toID(m.nature))) throw new Error('Naturaleza desconocida.');
@@ -196,19 +202,14 @@ export function validateMember(m: Member, gen: Gen) {
   if (!used.length) throw new Error('Selecciona al menos un movimiento.');
   if (new Set(used).size !== used.length) throw new Error('No se pueden repetir movimientos.');
   for (const move of used)
-    if (!m.data.moves.includes(move) || !g.moves.get(toID(move)))
+    if ((gen !== 10 && !m.data.moves.includes(move)) || !g.moves.get(toID(move)))
       throw new Error(`${move} no está disponible para esta especie y generación.`);
 }
 export function restoreTeams(raw: string | null): { teams: Team[]; gen: Gen } | null {
   if (!raw) return null;
   try {
     const v = JSON.parse(raw);
-    if (
-      v.version !== 1 ||
-      !Array.isArray(v.teams) ||
-      v.teams.length !== 2 ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(v.gen)
-    )
+    if (v.version !== 1 || !Array.isArray(v.teams) || v.teams.length !== 2 || !isGen(v.gen))
       return null;
     for (const t of v.teams) {
       if (typeof t.name !== 'string' || t.slots?.length !== 6) return null;

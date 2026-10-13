@@ -303,3 +303,118 @@
     font-size: 12px;
   }
 }
+/* Each LAB has two teams and its own mechanics. */
+.lab-toolbar {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.lab-toolbar .lab-tabs {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0;
+}
+.lab-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.lab-tab-group {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+.lab-tab-group .lab-tab.active {
+  border-radius: 8px 0 0 0;
+}
+.lab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.lab-tab-group.active .lab-close {
+  border-bottom-color: var(--primary);
+  background: var(--soft);
+  border-radius: 0 8px 0 0;
+}
+.lab-close:hover:not(:disabled) {
+  color: var(--negative);
+  background: var(--soft-alt);
+}
+.lab-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.lab-close-roster h3 {
+  font-size: 14px;
+  margin-top: 18px;
+}
+.lab-tab.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+  background: var(--soft);
+  border-radius: 8px 8px 0 0;
+}
+.lab-tab .lab-mechanics {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+.lab-tabs .lab-add {
+  flex-shrink: 0;
+  width: 40px;
+  align-self: center;
+  color: var(--primary);
+  background: var(--soft);
+  border: 1px dashed var(--primary);
+  border-radius: 8px;
+  margin: 0 5px;
+}
+.lab-tabs .lab-add:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lab-toolbar .toolbar-controls {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.lab-name {
+  width: 160px;
+  border: 1px solid var(--editable-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .lab-tab {
+    padding: 12px 8px;
+  }
+  .lab-tab .lab-mechanics {
+    display: none;
+  }
+  .lab-toolbar .toolbar-controls {
+    width: 100%;
+    margin: 0;
+    justify-content: flex-start;
+  }
+  .lab-name {
+    width: 135px;
+  }
+}

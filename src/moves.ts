@@ -1,6 +1,6 @@
 import { Move } from '@smogon/calc';
 import catalogData from './data/moves.json';
-import { generations, id, apiGeneration, type Gen } from './model';
+import { generations, id, apiGeneration, engineGeneration, type Gen } from './model';
 export type MoveCategory = 'Physical' | 'Special' | 'Status';
 interface CatalogEntry {
   es?: string;
@@ -17,6 +17,7 @@ interface CatalogEntry {
 }
 const catalog = catalogData as Record<string, CatalogEntry>;
 export function moveInfo(name: string, gen: Gen) {
+  gen = engineGeneration(gen);
   const native = generations.get(gen).moves.get(id(name) as never);
   if (!native) return null;
   const entry =
@@ -72,6 +73,7 @@ export function moveInfo(name: string, gen: Gen) {
               ? 61
               : Math.floor((pp * 8) / 5),
     priority,
+    alwaysCrit: !!native.willCrit,
     description,
   };
 }

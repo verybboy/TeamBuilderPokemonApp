@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   moveInfo,
@@ -118,7 +118,10 @@ export default function MovePicker({
     [active, setActive] = useState(0);
   const [popupUp, setPopupUp] = useState(false),
     [popupHeight, setPopupHeight] = useState(330);
-  const infos = names.map((name) => moveInfo(name, gen)).filter((info) => !!info);
+  const infos = useMemo(
+    () => names.map((name) => moveInfo(name, gen)).filter((info) => !!info),
+    [names, gen],
+  );
   const options = [
     '',
     ...infos

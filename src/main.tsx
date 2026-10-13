@@ -6,6 +6,8 @@ import './theme.css';
 import './moves.css';
 import './teams.css';
 import './backup.css';
+import './wiki.css';
+import './types.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

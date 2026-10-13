@@ -1,7 +1,14 @@
 import { calculate, Field, Move, Pokemon } from '@smogon/calc';
 import { checkAirLock, checkItem, getFinalSpeed } from '@smogon/calc/dist/mechanics/util';
 import type { Terrain, Weather } from '@smogon/calc/dist/data/interface';
-import { calcPokemon, generations, type Gen, type Member, type Spread } from './model';
+import {
+  calcPokemon,
+  generations,
+  engineGeneration,
+  type Gen,
+  type Member,
+  type Spread,
+} from './model';
 import { moveInfo } from './moves';
 export interface SideSettings {
   reflect: boolean;
@@ -56,7 +63,7 @@ export function damageFor(
   const [left, right] = fighters(a, b, gen, settings);
   const attacker = reverse ? right : left,
     defender = reverse ? left : right;
-  const move = new Move(gen, moveName, {
+  const move = new Move(engineGeneration(gen), moveName, {
     isCrit: critical,
     ability: attacker.ability,
     item: attacker.item,
@@ -73,7 +80,13 @@ export function damageFor(
       statusMove: move.category === 'Status',
       rolls: 0,
     };
-  const result = calculate(gen, attacker, defender, move, fieldFor(settings, reverse));
+  const result = calculate(
+    engineGeneration(gen),
+    attacker,
+    defender,
+    move,
+    fieldFor(settings, reverse),
+  );
   const [min, max] = result.range();
   const hp = defender.maxHP();
   const description =
@@ -93,7 +106,11 @@ export function damageFor(
   };
 }
 function priority(p: Pokemon, name: string, gen: Gen) {
-  const m = new Move(gen, name, { ability: p.ability, item: p.item, species: p.name });
+  const m = new Move(engineGeneration(gen), name, {
+    ability: p.ability,
+    item: p.item,
+    species: p.name,
+  });
   let n = moveInfo(name, gen)?.priority ?? m.priority;
   if (p.hasAbility('Prankster') && m.category === 'Status') n += 1;
   if (p.hasAbility('Gale Wings') && m.type === 'Flying' && (gen === 6 || p.curHP() === p.maxHP()))

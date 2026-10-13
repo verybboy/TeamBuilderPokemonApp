@@ -1,4 +1,4 @@
-import { validateMember, id, type Gen, type Member, type Team } from './model';
+import { validateMember, id, isGen, type Gen, type Member, type Team } from './model';
 import { exportShowdown } from './showdown';
 import { writeSavedData } from './storage';
 export const LIBRARY_KEY = 'pokemon-team-lab:configurations:v1';
@@ -25,7 +25,7 @@ export function restoreLibrary(raw: string | null): {
         typeof entry.name !== 'string' ||
         !entry.name.trim() ||
         typeof entry.savedAt !== 'string' ||
-        ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(entry.gen)
+        !isGen(entry.gen)
       )
         throw new Error();
       ids.add(entry.id);
@@ -79,7 +79,7 @@ export function downloadText(
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function configurationFilename(entry: Pick<SavedConfiguration, 'name' | 'gen'>) {
-  return `${id(entry.name) || 'pokemon'}-${entry.gen === 0 ? 'champions' : `gen${entry.gen}`}.txt`;
+  return `${id(entry.name) || 'pokemon'}-${entry.gen === 0 ? 'champions' : entry.gen === 10 ? 'locke' : `gen${entry.gen}`}.txt`;
 }
 export const TEAM_LIBRARY_KEY = 'pokemon-team-lab:teams:v1';
 export interface SavedTeamConfiguration {
@@ -118,7 +118,7 @@ export function restoreTeamLibrary(raw: string | null): {
         typeof entry.name !== 'string' ||
         !entry.name.trim() ||
         typeof entry.savedAt !== 'string' ||
-        ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(entry.gen) ||
+        !isGen(entry.gen) ||
         entry.team?.name !== entry.name
       )
         throw new Error();
