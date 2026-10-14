@@ -5,11 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/verify-dist.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "update:moves": "node scripts/update-moves.mjs",
-    "update:wiki": "node scripts/update-wiki.mjs"
+    "update:wiki": "node scripts/update-wiki.mjs",
+    "check:dist": "node scripts/verify-dist.mjs"
+  },
+  "engines": {
+    "node": ">=22.15.0 <23 || >=24.0.0",
+    "npm": ">=10"
   },
   "dependencies": {
     "@smogon/calc": "^0.12.0",

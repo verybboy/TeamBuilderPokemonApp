@@ -168,38 +168,6 @@ svg {
 .nav-item > svg:last-child:not(:first-child) {
   margin-left: auto;
 }
-.sidebar-tip {
-  margin: auto 10px 30px;
-  padding-top: 60px;
-}
-.tip-icon {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #3b5143;
-  border-radius: 8px;
-  color: #b7d7a7;
-  margin-bottom: 15px;
-}
-.sidebar-tip h3 {
-  color: #cadacb;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 9px;
-}
-.sidebar-tip p {
-  font-size: 11px;
-  color: #7e9787;
-  line-height: 1.85;
-  max-width: 166px;
-}
-.tip-line {
-  margin-top: 25px;
-  height: 1px;
-  background: linear-gradient(90deg, #546f59, transparent);
-}
 .sidebar-bottom {
   border-top: 1px solid #293b30;
   display: flex;
@@ -271,12 +239,6 @@ main {
   max-width: 1600px;
   margin: auto;
 }
-.page-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 0 38px;
-}
 .eyebrow {
   font-size: 9px;
   font-weight: 700;
@@ -285,81 +247,6 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.page-intro .eyebrow span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #649775;
-}
-.page-intro h1 {
-  font-size: clamp(28px, 3.05vw, 43px);
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: -1.8px;
-  margin: 16px 0 15px;
-  color: #203b2e;
-}
-.page-intro h1 em {
-  color: #548867;
-  font-style: normal;
-}
-.intro-description {
-  font-size: 12px;
-  line-height: 1.8;
-  color: #7b897e;
-}
-.intro-counter {
-  display: flex;
-  align-items: center;
-  gap: 23px;
-  margin-right: 15px;
-}
-.counter-orbit {
-  height: 88px;
-  width: 88px;
-  border-radius: 50%;
-  border: 1px solid #dce5d7;
-  color: #7e9b73;
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-.counter-orbit:after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px dashed #dce5d7;
-  border-radius: 50%;
-}
-.orbit-dot {
-  position: absolute;
-  right: 8px;
-  top: 14px;
-  width: 8px;
-  height: 8px;
-  border: 2px solid #f8f9f5;
-  background: #94b680;
-  border-radius: 50%;
-  z-index: 1;
-}
-.intro-counter p {
-  display: flex;
-  gap: 11px;
-  align-items: center;
-}
-.intro-counter strong {
-  font-family: 'Manrope', sans-serif;
-  font-size: 44px;
-  font-weight: 400;
-  letter-spacing: -3px;
-  color: #44654c;
-}
-.intro-counter p span {
-  font-size: 9px;
-  letter-spacing: 1px;
-  line-height: 1.9;
-  color: #91a08d;
 }
 .workspace-toolbar {
   display: flex;
@@ -1576,9 +1463,6 @@ main {
   main {
     padding-top: 46px;
   }
-  .page-intro {
-    padding-bottom: 45px;
-  }
   .pokemon-card.empty {
     min-height: 104px;
   }
@@ -1617,14 +1501,6 @@ main {
     font-size: 11px;
     gap: 9px;
     padding: 13px 10px;
-  }
-  .intro-counter {
-    margin-right: 0;
-    gap: 15px;
-  }
-  .counter-orbit {
-    width: 70px;
-    height: 70px;
   }
   .teams-grid {
     gap: 16px;
@@ -1685,7 +1561,6 @@ main {
   }
   .brand > span:last-child,
   .sidebar-caption,
-  .sidebar-tip,
   .sidebar-bottom,
   .nav-item > svg:last-child:not(:first-child),
   .nav-dot {
@@ -1699,12 +1574,6 @@ main {
   }
   .sidebar nav {
     gap: 14px;
-  }
-  .intro-counter strong {
-    font-size: 36px;
-  }
-  .page-intro h1 {
-    font-size: 35px;
   }
   .selection-status strong {
     font-size: 10px;
@@ -1749,29 +1618,6 @@ main {
   }
   .save-status svg {
     display: none;
-  }
-  .page-intro {
-    padding: 8px 0 24px;
-  }
-  .page-intro h1 {
-    font-size: 30px;
-    letter-spacing: -1px;
-  }
-  .page-intro .eyebrow {
-    font-size: 7px;
-    letter-spacing: 1.3px;
-  }
-  .intro-description {
-    font-size: 11px;
-  }
-  .counter-orbit {
-    display: none;
-  }
-  .intro-counter strong {
-    font-size: 32px;
-  }
-  .intro-counter p span {
-    font-size: 8px;
   }
   .workspace-toolbar {
     flex-wrap: wrap;
@@ -2059,18 +1905,6 @@ main {
   }
   .breadcrumb span {
     padding: 0 6px;
-  }
-  .intro-counter {
-    display: none;
-  }
-  .intro-description br {
-    display: none;
-  }
-  .page-intro h1 {
-    font-size: 34px;
-  }
-  .page-intro .eyebrow {
-    font-size: 8px;
   }
   .generation-label select {
     max-width: 133px;

@@ -21,7 +21,7 @@ Cuando seleccionamos uno o varios Pokémon podremos realizar distintas acciones.
 
 ### 2.1. Añadir/Editar Pokémon
 
-Cuando seleccionamos mediante un *check* únicamente un Pokémon, podremos elegir esta opción. Se mostrará una ventana nueva en la que podremos añadir el Pokémon que queremos y editar las siguientes características:
+Cuando seleccionamos mediante un _check_ únicamente un Pokémon, podremos elegir esta opción. Se mostrará una ventana nueva en la que podremos añadir el Pokémon que queremos y editar las siguientes características:
 
 1. Los movimientos.
 2. Los IVs y EVs (**31 IVs por defecto, 0 EVs por defecto**).
@@ -35,7 +35,7 @@ Cuando seleccionamos mediante un *check* únicamente un Pokémon, podremos elegi
 
 **Referencia visual:** modelo de Pokémon Showdown para implementar algo parecido.
 
-![Modelo de editor de Pokémon Showdown](TeamBuilderPokemonApp_assets/editor-showdown.png)
+[Editor de referencia: Pokémon Showdown](https://play.pokemonshowdown.com/teambuilder).
 
 #### Importación y exportación de Pokémon Showdown
 
@@ -62,7 +62,7 @@ Quiet Nature
 
 ### 2.2. Borrar Pokémon
 
-Cuando seleccionamos mediante un *check* únicamente un Pokémon, podremos elegir la opción de eliminar el Pokémon seleccionado.
+Cuando seleccionamos mediante un _check_ únicamente un Pokémon, podremos elegir la opción de eliminar el Pokémon seleccionado.
 
 ### 2.3. Enfrentar Pokémon
 
@@ -72,8 +72,7 @@ La calculadora de daño debe ser parecida a [Pokémon Showdown Damage Calculator
 
 **Referencia visual:**
 
-![Modelo de calculadora de daño](TeamBuilderPokemonApp_assets/pkmn-dmg-calculator.png)
-
+[Calculadora de referencia](https://calc.pokemonshowdown.com/).
 
 #### Factores que afectan al daño
 

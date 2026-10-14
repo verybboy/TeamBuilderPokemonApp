@@ -1,6 +1,6 @@
 # Pokémon Team Lab
 
-Aplicación web con hasta cinco LABs independientes, cada uno con dos equipos de seis Pokémon y sus propias mecánicas, para analizar enfrentamientos. Implementada siguiendo [TeamBuilderPokemonApp.md](TeamBuilderPokemonApp.md) y las referencias visuales del repositorio.
+Aplicación web con hasta cinco LABs independientes, cada uno con dos equipos de seis Pokémon y sus propias mecánicas, para analizar enfrentamientos. Implementada siguiendo [TeamBuilderPokemonApp.md](TeamBuilderPokemonApp.md).
 
 ## Ejecutar
 
@@ -18,6 +18,18 @@ npm run build       # TypeScript y producción en dist/
 npm run preview     # Servir la versión de producción
 npm run test        # Pruebas de dominio, motor e interfaz sin conexión
 ```
+
+## Desplegar en S3 + CloudFront
+
+La aplicación es estática y se publica en la raíz del dominio. Sube únicamente el contenido de `dist/`, generado con `npm run build`; no necesita un servidor Node.js en producción. La compilación comprueba que el paquete no contenga fuentes, pruebas ni documentación y que sus recursos locales existan.
+
+Consulta [la guía de despliegue](docs/DEPLOYMENT.md) para configurar un bucket privado, OAC, HTTPS y caché. Incluye un script PowerShell con modo de revisión local, sin llamadas a AWS:
+
+```powershell
+.\scripts\deploy-aws.ps1 -Bucket 'pokemon-team-lab-mi-bucket' -DistributionId 'E123456789ABC' -Profile 'pokemon-deploy' -Plan
+```
+
+Los archivos generados (`node_modules/`, `dist/`, cachés y logs) no se versionan. `npm ci` restaura las dependencias; `npm run build` reconstruye el paquete. Las pruebas y los generadores de catálogos se conservan para desarrollar y mantener el proyecto, sin copiarlos a S3. Los avisos de licencia se distribuyen en `THIRD_PARTY_NOTICES.txt`.
 
 Prueba opcional con peticiones reales a PokéAPI:
 
@@ -183,4 +195,4 @@ MiniWiki se implementa en `src/MiniWiki.tsx`, `src/wiki.ts` y `src/wiki.css`, co
 - [Pokémon Champions: información oficial](https://champions.pokemon.com/en-us/pokemon/)
 - Las piedras, formas y estadísticas mega se resuelven con [los datos del motor Smogon](https://github.com/smogon/damage-calc/blob/master/calc/src/data/items.ts). Solo se ofrece el control si la piedra y forma existen en el perfil elegido y son compatibles con la especie; se respeta el catálogo del motor sin afirmar legalidad de reglamentos de temporada.
 
-Pokémon y los diseños de sus personajes pertenecen a sus respectivos titulares. Proyecto independiente, sin afiliación oficial.
+El sprite local de Torkoal es el PNG transparente original de 96 × 96 de [PokéAPI Sprites](https://github.com/PokeAPI/sprites/blob/master/sprites/pokemon/324.png), conservado sin modificaciones. Pokémon y los gráficos originales pertenecen a sus respectivos titulares (Nintendo, Creatures y GAME FREAK). Proyecto independiente, sin afiliación oficial. Las atribuciones y la licencia de los catálogos se conservan en [src/data/README.md](src/data/README.md) y [src/data/showdown-LICENSE](src/data/showdown-LICENSE).

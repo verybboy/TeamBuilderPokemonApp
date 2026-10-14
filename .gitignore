@@ -4,3 +4,10 @@ dist/
 .env*
 !.env.example
 playwright-report/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+.aws/
+.npm-cache/
+.npm-logs/

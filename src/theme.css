@@ -70,7 +70,6 @@ body,
   color: #ffa461;
 }
 .sidebar-caption,
-.sidebar-tip p,
 .sidebar-bottom {
   color: #c9b7a4;
 }
@@ -89,16 +88,6 @@ body,
 .nav-dot,
 .local-dot {
   background: #ffb36f;
-}
-.tip-icon {
-  color: var(--yellow);
-  border-color: #87664a;
-}
-.sidebar-tip h3 {
-  color: white;
-}
-.tip-line {
-  background: linear-gradient(90deg, #ffb36f, transparent);
 }
 .sidebar-bottom {
   border-color: #594637;
@@ -125,8 +114,6 @@ body,
 .team-1 .team-header {
   border-top-color: var(--red);
 }
-.page-intro h1,
-.page-intro h1 em,
 .team-name,
 .name-button,
 .modal-header h2,
@@ -135,9 +122,6 @@ body,
 .result-details h3,
 .breadcrumb strong {
   color: var(--ink);
-}
-.page-intro h1 em {
-  color: var(--primary);
 }
 .breadcrumb span {
   color: var(--muted);
@@ -149,13 +133,8 @@ body,
 .workspace-tab {
   color: var(--primary);
 }
-.page-intro .eyebrow span {
-  background: var(--red);
-}
-.intro-description,
 .breadcrumb,
 .save-status,
-.intro-counter p span,
 .generation-label,
 .muted,
 .small.muted,
@@ -169,18 +148,6 @@ body,
 .page-footer a,
 .help-steps p {
   color: var(--muted);
-}
-.counter-orbit,
-.counter-orbit:after {
-  border-color: var(--line);
-  color: var(--primary);
-}
-.orbit-dot {
-  background: var(--red);
-  border-color: var(--bg);
-}
-.intro-counter strong {
-  color: var(--primary);
 }
 .workspace-toolbar {
   border-color: var(--line);
@@ -945,7 +912,6 @@ textarea:focus-visible {
   }
   .sidebar .brand,
   .sidebar .sidebar-caption,
-  .sidebar .sidebar-tip,
   .sidebar .sidebar-bottom {
     display: none;
   }
