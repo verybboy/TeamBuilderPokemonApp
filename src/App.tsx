@@ -524,9 +524,13 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#" aria-label="Pokémon Team Lab">
-          <span className="brand-mark">
-            <span />
-          </span>
+          <img
+            className="brand-sprite"
+            src="/branding/torkoal.png"
+            alt="Sprite pixel art de Torkoal"
+            width={64}
+            height={64}
+          />
           <span>
             TEAM<span className="brand-light">LAB</span>
           </span>

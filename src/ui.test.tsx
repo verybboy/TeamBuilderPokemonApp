@@ -358,6 +358,11 @@ describe('LABs independientes', () => {
       (screen.getByRole('combobox', { name: 'Mecánicas de la biblioteca' }) as HTMLSelectElement)
         .value,
     ).toBe('0');
+    expect(screen.queryByRole('button', { name: /Añadir Ratón/ })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Mecánicas de la biblioteca' }), {
+      target: { value: '9' },
+    });
+    await screen.findByRole('button', { name: /Añadir Ratón/ });
     fireEvent.click(screen.getByRole('button', { name: /Añadir Ratón/ }));
     await waitFor(() => expect(readConstructor().teams[0].slots[0]?.data.name).toBe('Pikachu'));
     expect(restoreWorkspace(localStorage.getItem(KEY))!.labs[0]).toEqual(original);
@@ -367,7 +372,7 @@ describe('LABs independientes', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /Cargar Sol/ }));
     await waitFor(() => expect(readConstructor().teams[1].slots[2]?.data.name).toBe('Torkoal'));
-    expect(readConstructor().gen).toBe(0);
+    expect(readConstructor().gen).toBe(9);
     expect(restoreWorkspace(localStorage.getItem(KEY))!.labs[0]).toEqual(original);
     fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
     expect(screen.getByRole('tab', { name: /LAB 2/ }).getAttribute('aria-selected')).toBe('true');
@@ -567,11 +572,21 @@ describe('Copia completa desde el menú lateral', () => {
     expect(screen.getByRole('button', { name: 'Torkoal' })).toBeDefined();
     expect(readConstructor().teams[0].slots[4]!.hpPercent).toBe(37);
     fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
-    expect(screen.getByText('Ratón guardado')).toBeDefined();
+    expect(screen.queryByText('Ratón guardado')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
     expect(screen.getByText('Sol guardado')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Constructor de equipos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir LAB' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Generación' }), {
+      target: { value: '9' },
+    });
+    await waitFor(() => expect(readConstructor().gen).toBe(9));
+    fireEvent.click(screen.getByRole('button', { name: 'Mis configuraciones' }));
+    expect(screen.getByText('Ratón guardado')).toBeDefined();
+    fireEvent.click(screen.getByRole('tab', { name: /Mis equipos/ }));
+    expect(screen.queryByText('Sol guardado')).toBeNull();
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
-  });
+  }, 10000);
   it('rechaza un archivo inválido sin abrir confirmación ni modificar los datos', async () => {
     saved();
     render(<App />);
@@ -790,6 +805,7 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     expect(localStorage.getItem(TEAM_LIBRARY_KEY)).toBe(library);
   });
   it('ordena Pokémon por especie y equipos por su nombre, incluso tras renombrar', () => {
+    saved();
     const p = addConfiguration([], member('Pikachu'), 9, 'AAA');
     const g = addConfiguration(p.entries, member('Garchomp'), 9, 'ZZZ');
     localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: [p.entry, g.entry] }));
@@ -865,23 +881,28 @@ describe('Biblioteca de equipos, limpieza y cobertura', () => {
     expect(localStorage.getItem(KEY)).toBe(original);
     expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries).toHaveLength(1);
   });
-  it('convierte equipos guardados de generación 9 a Champions antes de cargar', async () => {
+  it('muestra y carga un equipo cuando se selecciona su perfil de guardado', async () => {
     const team = emptyTeams()[0];
     team.slots[3] = member('Torkoal');
     team.slots[3]!.evs = { hp: 252, atk: 0, def: 0, spa: 252, spd: 4, spe: 0 };
     storeTeams(addTeamConfiguration([], team, 9, 'Sol').entries);
     render(<App />);
     openTeams();
+    expect(screen.queryByRole('button', { name: /Cargar Sol en/ })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Mecánicas de la biblioteca' }), {
+      target: { value: '9' },
+    });
+    await screen.findByRole('button', { name: /Cargar Sol en/ });
     fireEvent.click(screen.getByRole('button', { name: /Cargar Sol en/ }));
-    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull());
+    await waitFor(() => expect(readConstructor().teams[0].slots[3]).not.toBeNull());
     const stored = readConstructor();
-    expect(stored.gen).toBe(0);
+    expect(stored.gen).toBe(9);
     expect(stored.teams[0].slots[3]!.evs).toEqual({
-      hp: 32,
+      hp: 252,
       atk: 0,
       def: 0,
-      spa: 32,
-      spd: 1,
+      spa: 252,
+      spd: 4,
       spe: 0,
     });
     expect(JSON.parse(localStorage.getItem(TEAM_LIBRARY_KEY)!).entries[0].gen).toBe(9);
@@ -1192,6 +1213,7 @@ describe('Champions, naturalezas, tema y configuraciones', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
   it('conserva la configuración si falla el almacenamiento al eliminarla', () => {
+    saved();
     const library = addConfiguration([], member('Garchomp'), 9, 'Ataque');
     localStorage.setItem(LIBRARY_KEY, JSON.stringify({ version: 1, entries: library.entries }));
     render(<App />);

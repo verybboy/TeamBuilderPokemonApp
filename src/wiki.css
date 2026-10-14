@@ -51,7 +51,7 @@
 }
 .wiki-filters button.active {
   background: var(--primary);
-  color: var(--paper);
+  color: var(--on-primary);
   border-color: var(--primary);
 }
 .wiki-context {

@@ -75,7 +75,15 @@ export default function Library({
     setTeam(0);
     setError('');
   }, [labId]);
-  const visible = entries
+  useEffect(() => {
+    setRenaming(null);
+    setDeleting(null);
+    setExporting(null);
+    setError('');
+  }, [labId, gen]);
+  const profileEntries = entries.filter((entry) => entry.gen === gen),
+    profileTeams = savedTeams.filter((entry) => entry.gen === gen);
+  const visible = profileEntries
     .filter((entry) =>
       `${entry.name} ${entry.member.data.name} ${entry.member.nature} ${entry.member.moves.join(' ')}`
         .toLowerCase()
@@ -145,7 +153,7 @@ export default function Library({
             setError('');
           }}
         >
-          Mis Pokémon <span className="pill">{entries.length}</span>
+          Mis Pokémon <span className="pill">{profileEntries.length}</span>
         </button>
         <button
           id="team-library-tab"
@@ -159,7 +167,7 @@ export default function Library({
             setError('');
           }}
         >
-          Mis equipos <span className="pill">{savedTeams.length}</span>
+          Mis equipos <span className="pill">{profileTeams.length}</span>
         </button>
       </div>
       <div className="library-controls">
@@ -225,9 +233,9 @@ export default function Library({
       </div>
       <p className="small muted library-explanation">
         El LAB elegido determina los equipos de destino y su mecánica; cambiar el perfil solo afecta
-        a ese LAB. Cada configuración conserva su perfil. Al añadirla a otro perfil se convierte y
-        valida antes de ocupar una plaza. Los .txt de Champions usan los valores SP (0–32) en la
-        línea EVs; impórtalos con Champions seleccionado.
+        a ese LAB. Solo se muestran los Pokémon y equipos guardados con {mechanicsLabel(gen)}. Los
+        .txt de Champions usan los valores SP (0–32) en la línea EVs; impórtalos con Champions
+        seleccionado.
       </p>
       {(tab === 'pokemon' ? invalid : teamsInvalid) && (
         <p className="error" role="alert">
@@ -243,9 +251,9 @@ export default function Library({
       {tab === 'teams' ? (
         <div id="team-library-panel" role="tabpanel" aria-labelledby="team-library-tab">
           <SavedTeams
-            key={labId}
+            key={`${labId}:${gen}`}
             labName={labs.find((lab) => lab.id === labId)?.name || 'LAB seleccionado'}
-            entries={savedTeams}
+            entries={profileTeams}
             query={query}
             destination={team}
             teams={teams}
@@ -389,7 +397,9 @@ export default function Library({
           ) : (
             <div className="library-empty">
               <FolderHeart size={44} />
-              <h2>{query ? 'No hay coincidencias' : 'Tu próxima estrategia merece guardarse'}</h2>
+              <h2>
+                {query ? 'No hay coincidencias' : 'No tienes Pokémon guardados en este perfil'}
+              </h2>
               <p>
                 {query
                   ? 'Prueba otro nombre, naturaleza o movimiento.'

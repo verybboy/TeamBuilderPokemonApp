@@ -124,27 +124,6 @@ svg {
   font-weight: 400;
   color: #a5c9b2;
 }
-.brand-mark {
-  width: 31px;
-  height: 31px;
-  border: 2px solid #a3c5ad;
-  border-radius: 50%;
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(#a3c5ad 46%, #101e18 46%, #101e18 54%, transparent 54%);
-  transform: rotate(-30deg);
-}
-.brand-mark span {
-  display: block;
-  background: #101e18;
-  border: 2px solid #a3c5ad;
-  border-radius: 50%;
-  width: 10px;
-  height: 10px;
-  position: absolute;
-  top: 9px;
-  left: 9px;
-}
 .sidebar-caption {
   font-size: 9px;
   font-weight: 600;

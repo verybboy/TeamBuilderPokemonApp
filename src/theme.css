@@ -1,43 +1,46 @@
-/* Pokémon palette: Poké Ball red, ocean blue and Pikachu yellow. */
+/* Torkoal palette: ember orange, charcoal shell and warm cream smoke. */
 /* Editable controls and save feedback are styled at the end to cover all app forms. */
 :root {
   color-scheme: light;
-  --bg: #f2f6ff;
+  --bg: #faf4ed;
   --paper: #ffffff;
-  --soft: #edf3ff;
-  --soft-alt: #fff1f3;
-  --ink: #17345d;
-  --muted: #627698;
-  --line: #d5e1f5;
-  --primary: #2467e9;
-  --primary-hover: #1250c9;
-  --red: #e84050;
-  --yellow: #ffd84b;
+  --soft: #f7eadb;
+  --soft-alt: #fce7df;
+  --ink: #342a24;
+  --muted: #786554;
+  --line: #e5d4c0;
+  --primary: #b84b12;
+  --primary-hover: #94380c;
+  --on-primary: #ffffff;
+  --green: var(--primary);
+  --red: #b9402a;
+  --yellow: #f3d4a4;
   --positive: #159447;
-  --negative: #d82c45;
-  --shadow: #143b7312;
+  --negative: #b83227;
+  --shadow: #49301d14;
   --editable-bg: #ffffff;
-  --editable-border: #83aceb;
+  --editable-border: #c58759;
   color: var(--ink);
   background: var(--bg);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0c1424;
-  --paper: #162239;
-  --soft: #202f4b;
-  --soft-alt: #352333;
-  --ink: #e7efff;
-  --muted: #a7b8d4;
-  --line: #344766;
-  --primary: #6497ff;
-  --primary-hover: #83acff;
-  --red: #ff7181;
+  --bg: #1c1b1a;
+  --paper: #292624;
+  --soft: #37312c;
+  --soft-alt: #402b27;
+  --ink: #fff1e1;
+  --muted: #c9b7a4;
+  --line: #55483d;
+  --primary: #ffa461;
+  --primary-hover: #ffbd86;
+  --on-primary: #29211b;
+  --red: #ff8970;
   --positive: #5bed95;
-  --negative: #ff7186;
+  --negative: #ff8170;
   --shadow: #00000035;
-  --editable-bg: #405b80;
-  --editable-border: #86addc;
+  --editable-bg: #625447;
+  --editable-border: #b99872;
 }
 body,
 .main-shell {
@@ -45,54 +48,60 @@ body,
   color: var(--ink);
 }
 .sidebar {
-  background: #10265b;
-  border-color: #254c92;
-  color: #cadcff;
+  background: #292624;
+  border-color: #594637;
+  color: #f8e9d8;
+}
+.brand {
+  gap: 8px;
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 30px;
+}
+.brand-sprite {
+  display: block;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 .brand-light {
-  color: #ffd84b;
-}
-.brand-mark {
-  border-color: white;
-  background: linear-gradient(#f64553 46%, #173469 46%, #173469 54%, white 54%);
-}
-.brand-mark span {
-  background: white;
-  border-color: #173469;
+  color: #ffa461;
 }
 .sidebar-caption,
 .sidebar-tip p,
 .sidebar-bottom {
-  color: #a2bce8;
+  color: #c9b7a4;
 }
 .nav-item {
-  color: #b0c8ee;
+  color: #dfc9b2;
 }
 .nav-item.active {
   color: white;
-  background: #2865d6;
+  background: #88400f;
   box-shadow: inset 3px 0 0 var(--yellow);
 }
 .nav-item:not(:disabled):hover {
-  background: #2a5193;
+  background: #4b392b;
   color: white;
 }
 .nav-dot,
 .local-dot {
-  background: #ffcc3c;
+  background: #ffb36f;
 }
 .tip-icon {
   color: var(--yellow);
-  border-color: #4e70a7;
+  border-color: #87664a;
 }
 .sidebar-tip h3 {
   color: white;
 }
 .tip-line {
-  background: linear-gradient(90deg, #ffd84b, transparent);
+  background: linear-gradient(90deg, #ffb36f, transparent);
 }
 .sidebar-bottom {
-  border-color: #38558a;
+  border-color: #594637;
 }
 .topbar,
 .team-panel,
@@ -129,6 +138,12 @@ body,
 }
 .page-intro h1 em {
   color: var(--primary);
+}
+.breadcrumb span {
+  color: var(--muted);
+}
+.help-steps {
+  color: var(--ink);
 }
 .eyebrow,
 .workspace-tab {
@@ -174,18 +189,18 @@ body,
   border-color: var(--primary);
 }
 .pill {
-  color: #765900;
+  color: #64401f;
   background: var(--yellow);
 }
 .team-avatar {
-  background: #dfeaff;
-  border-color: #b6cdf5;
-  color: #2762c0;
+  background: var(--soft);
+  border-color: var(--line);
+  color: var(--primary);
 }
 .team-1 .team-avatar {
-  background: #ffe0e5;
-  border-color: #f7b4c1;
-  color: #d53452;
+  background: var(--soft-alt);
+  border-color: var(--line);
+  color: var(--red);
 }
 .team-count {
   color: var(--primary);
@@ -229,14 +244,11 @@ textarea:focus-visible {
 .button.primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: white;
+  color: var(--on-primary);
 }
 .button.primary:not(:disabled):hover {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
-}
-[data-theme='dark'] .button.primary {
-  color: #0a1730;
 }
 .button.secondary {
   background: var(--paper);
@@ -535,7 +547,7 @@ textarea:focus-visible {
   margin-top: 12px;
 }
 .modal::backdrop {
-  background: #06112acc;
+  background: #16100ccc;
 }
 .field {
   background: var(--soft);
@@ -562,7 +574,7 @@ textarea:focus-visible {
 }
 .segmented .active {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
 }
 .battle-meta dt,
 .battle-meta dd,
@@ -831,7 +843,7 @@ textarea:focus-visible {
 .profile-badge.champions {
   background: var(--yellow);
   border-color: var(--yellow);
-  color: #684900;
+  color: #64401f;
   font-weight: 700;
 }
 .library-nature {

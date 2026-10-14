@@ -51,7 +51,7 @@
 }
 .type-mode button[aria-pressed='true'] {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
 }
 .type-calculator-columns {
   display: grid;

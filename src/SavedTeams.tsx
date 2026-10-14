@@ -143,7 +143,7 @@ export default function SavedTeams({
       ) : (
         <div className="library-empty">
           <FolderHeart size={44} />
-          <h2>{query ? 'No hay coincidencias' : 'Tus equipos guardados'}</h2>
+          <h2>{query ? 'No hay coincidencias' : 'No tienes equipos guardados en este perfil'}</h2>
           <p>
             {query
               ? 'Prueba otro nombre de equipo o Pokémon.'
