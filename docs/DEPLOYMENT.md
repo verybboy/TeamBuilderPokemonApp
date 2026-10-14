@@ -2,6 +2,29 @@
 
 TEAMLAB es una aplicación estática. Este procedimiento publica el contenido de `dist/` en la raíz de un bucket dedicado y lo sirve mediante CloudFront. No requiere backend ni variables de entorno. Los recursos de PokéAPI, sprites remotos y Google Fonts se consultan desde el navegador.
 
+## Despliegue del proyecto (2026-10-14)
+
+- URL: <https://df1pf9cpwmb8c.cloudfront.net/>.
+- Perfil obligatorio: `pokemon-deploy`; región S3: `eu-west-1`.
+- Bucket privado: `pokemon-team-lab-051826724623`.
+- Distribución: `E2CXWNYDFHMKXH`; OAC: `E31YR8IE3C2XK3`.
+- CloudFront por uso con cuotas Always Free y `PriceClass_100`. Estimación de 0,02–0,05 USD/mes para 25.000–100.000 lecturas S3 y CloudFront dentro de la cuota gratuita disponible de la cuenta; sin límite automático de gasto. Véanse las hipótesis, precios y comandos en [el plan revisado](AWS_DEPLOY_PLAN.md).
+- Publicado desde `aws-deploy`, commit `b981fd9`: 7 archivos y 2,65 MiB; 223 pruebas superadas y una prueba de API real omitida por defecto.
+- Verificación posterior: CloudFront en `Deployed`, los siete archivos servidos por HTTPS con SHA-256 idéntico a `dist/`, MIME y caché correctos, raíz sirviendo `index.html`, HTTP redirigiendo a HTTPS con 301 y S3 directo devolviendo 403. Bloqueo público y política restringida comprobados mediante AWS CLI; cifrado del HTML `AES256`. Revisión visual pendiente: no hay navegador conectado en la sesión.
+
+En esta distribución, el comportamiento predeterminado usa los campos clásicos de caché con TTL 0/0/31536000 y sin cookies, cabeceras de usuario ni query strings; evita crear una política personalizada. `/assets/*` usa `CachingOptimized` y ambos comportamientos usan `SecurityHeadersPolicy`. La navegación no necesita fallback SPA.
+
+Para actualizar este despliegue:
+
+```powershell
+npm run test
+npm run build
+.\scripts\deploy-aws.ps1 -Bucket 'pokemon-team-lab-051826724623' -DistributionId 'E2CXWNYDFHMKXH' -Profile 'pokemon-deploy' -Plan
+# Para publicar, ejecutar la misma llamada sin -Plan con autorización.
+```
+
+No vuelvas a ejecutar `create-aws-infrastructure.ps1 -Execute` para publicar nuevas versiones. Los registros locales de creación están en `.aws/`, excluidos de Git y del paquete público. Se conservan assets antiguos para sesiones abiertas; acordar su limpieza cuando se acumulen versiones.
+
 ## Compilar
 
 Requisitos de desarrollo: Node.js 22.15 o posterior dentro de la rama 22, o Node.js 24 o posterior; npm 10 o posterior. Para publicar necesitas también AWS CLI v2 y un perfil con permisos sobre el bucket y la distribución elegidos.
